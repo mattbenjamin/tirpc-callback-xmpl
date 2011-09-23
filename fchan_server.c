@@ -53,12 +53,16 @@ fchan_callbackthread(void *arg)
 
 	retval_1 = callback1_1(&callback1_1_arg, &result_1, cl);
 	if (retval_1 != RPC_SUCCESS) {
-	    clnt_perror (cl, "callback failed");
+	    printf("callback failed--client may be gone, thread return\n");
+            goto out;
 	}
 
 	printf("result: msg1: %s msg2: %s\n", result_1.msg1);
 
     }
+
+out:
+    return;
 
 } /* fchan_callbackthread */
 
@@ -88,6 +92,8 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
      * transport handle to a client, and call on the backchannel
      */
     r = pthread_create(&tid, NULL, &fchan_callbackthread, (void*) xprt);
+    if (! r)
+        pthread_detach(tid);
 
     return ( (r) ? FALSE : TRUE );
 }

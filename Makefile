@@ -21,7 +21,7 @@ OBJECTS_CLNT = $(SOURCES_CLNT.c:%.c=%.o) $(TARGETS_CLNT.c:%.c=%.o)
 OBJECTS_SVC = $(SOURCES_SVC.c:%.c=%.o) $(TARGETS_SVC.c:%.c=%.o)
 # Compiler flags 
 
-TIRPC = /home/matt/dev/nfs/ganesha-ibm/src/libtirpc
+TIRPC = /home/matt/dev/nfs/new-tirpc/libtirpc-lbx
 
 CPPFLAGS += -D_REENTRANT
 CFLAGS += -g3 -O0 -I$(TIRPC)/tirpc/ -D_REENTRANT -DSWITCH_DIRECTION
