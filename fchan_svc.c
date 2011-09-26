@@ -74,8 +74,16 @@ int
 main (int argc, char **argv)
 {
 	register SVCXPRT *transp;
+        svc_init_params svc_params;
 
 	pmap_unset (FCHAN_PROG, FCHANV);
+
+        /* New tirpc init function must be called to initialize the
+         * library. */
+        svc_params.flags = SVC_INIT_EPOLL; /* use EPOLL event mgmt */
+        svc_params.max_connections = 1024;
+        svc_params.max_events = 300; /* don't know good values for this */
+        svc_init(&svc_params);
 
 	transp = svctcp_create(RPC_ANYSOCK, 0, 0);
 	if (transp == NULL) {
