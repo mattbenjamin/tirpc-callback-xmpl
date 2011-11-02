@@ -14,17 +14,26 @@
  *  BEGIN SUITE INITIALIZATION and CLEANUP FUNCTIONS
  */
 
+char *host;
+CLIENT *cl_duplex_chan;
+static struct timeval timeout, default_timeout = { 25, 0 };
+
 static int
 duplex_rpc_unit_PkgInit(int argc, char *argv[])
 {
-    char *host = NULL;
-    CLIENT *cl, *cl_backchan;
     int opt;
+    host = NULL;
+    cl_duplex_chan = NULL;
 
-    while ((opt = getopt(argc, argv, "h:")) != -1) {
+    timeout = default_timeout;
+
+    while ((opt = getopt(argc, argv, "h:t:")) != -1) {
         switch (opt) {
         case 'h':
             host = optarg;
+            break;
+        case 't':
+            timeout.tv_sec = atol(optarg);
             break;
         default:
             break;
@@ -36,9 +45,9 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
         return (EXIT_FAILURE);
     }
 
-    cl = clnt_create (host, FCHAN_PROG, FCHANV, "tcp");
-    if (cl == NULL) {
-        clnt_pcreateerror (host);
+    cl_duplex_chan = clnt_create(host, FCHAN_PROG, FCHANV, "tcp");
+    if (cl_duplex_chan == NULL) {
+        clnt_pcreateerror(host);
         return (1);
     }
 
@@ -71,6 +80,14 @@ int clean_suite1(void)
 
 void overlapped_forward_calls_1(void)
 {
+    int code;
+    enum clnt_stat cl_stat;
+
+    cl_stat = clnt_call(cl_duplex_chan, BIND_CONN_TO_SESSION1,
+                        (xdrproc_t) xdr_void, (caddr_t) NULL /* argp */,
+                        (xdrproc_t) xdr_int, (caddr_t) &code,
+                        timeout);
+
     return;
 }
 
