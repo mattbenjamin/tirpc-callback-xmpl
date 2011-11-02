@@ -5,7 +5,9 @@
 
 CLIENT = fchan_client
 SERVER = fchan_server
+DUPLEX_UNIT = duplex_unit
 
+SOURCES_UNIT.c = duplex_unit.c
 SOURCES_CLNT.c = fchan_client.c bchan_server.c
 SOURCES_CLNT.h = 
 SOURCES_SVC.c = fchan_server.c
@@ -19,35 +21,45 @@ TARGETS = fchan.h fchan_xdr.c fchan_clnt.c fchan_svc.c
 
 OBJECTS_CLNT = $(SOURCES_CLNT.c:%.c=%.o) $(TARGETS_CLNT.c:%.c=%.o)
 OBJECTS_SVC = $(SOURCES_SVC.c:%.c=%.o) $(TARGETS_SVC.c:%.c=%.o)
-# Compiler flags 
+OBJECTS_UNIT = $(SOURCES_UNIT.c:%.c=%.o) $(TARGETS_UNIT.c:%.c=%.o)
 
+# Compiler flags 
+CUNIT=/opt/CUnit
 TIRPC = /home/matt/dev/nfs/new-tirpc/libtirpc-lbx
 
 CPPFLAGS += -D_REENTRANT
-CFLAGS += -g3 -O0 -I$(TIRPC)/tirpc/ -D_REENTRANT -DSWITCH_DIRECTION
-LDLIBS += $(TIRPC)/src/.libs/libtirpc.a -lnsl -lpthread 
+CFLAGS += -g3 -O0 -I$(TIRPC)/tirpc/ -I$(CUNIT)/include \
+	-D_REENTRANT -DRPC_DUPLEX
+LDFLAGS += -L$(CUNIT)/lib $(TIRPC)/src/.libs/libtirpc.a \
+	-lnsl -lcunit -lpthread
 RPCGENFLAGS = -C -M 
 
 # Targets 
 
-all : $(CLIENT) $(SERVER)
+all : $(CLIENT) $(SERVER) $(DUPLEX_UNIT)
 
 $(TARGETS) : $(SOURCES.x) $(SOURCES2.x)
 	# messy
 	#rpcgen $(RPCGENFLAGS) $(SOURCES.x)
 	#rpcgen $(RPCGENFLAGS) $(SOURCES2.x)
 
-$(OBJECTS_CLNT) : $(SOURCES_CLNT.c) $(SOURCES_CLNT.h) $(TARGETS_CLNT.c) 
+$(OBJECTS_CLNT) : $(SOURCES_CLNT.c) $(SOURCES_CLNT.h) $(TARGETS_CLNT.c)
 
-$(OBJECTS_SVC) : $(SOURCES_SVC.c) $(SOURCES_SVC.h) $(TARGETS_SVC.c) 
+$(OBJECTS_SVC) : $(SOURCES_SVC.c) $(SOURCES_SVC.h) $(TARGETS_SVC.c)
+
+$(OBJECTS_UNIT) : $(SOURCES_UNIT.c) $(SOURCES_UNIT.h) $(TARGETS_UNIT.c) 
 
 $(CLIENT) : $(OBJECTS_CLNT) 
-	$(LINK.c) -o $(CLIENT) $(OBJECTS_CLNT) $(LDLIBS) 
+	$(LINK.c) -o $(CLIENT) $(OBJECTS_CLNT) $(LDFLAGS) 
 
 $(SERVER) : $(OBJECTS_SVC) 
-	$(LINK.c) -o $(SERVER) $(OBJECTS_SVC) $(LDLIBS)
+	$(LINK.c) -o $(SERVER) $(OBJECTS_SVC) $(LDFLAGS)
+
+$(DUPLEX_UNIT) : $(OBJECTS_UNIT)
+	$(LINK.c) -o $(DUPLEX_UNIT) $(OBJECTS_UNIT) $(LDFLAGS)
 
  clean:
 	 $(RM) core Makefile.fchan Makefile.bchan \
-	$(OBJECTS_CLNT) $(OBJECTS_SVC) $(CLIENT) $(SERVER)
+	$(OBJECTS_CLNT) $(OBJECTS_SVC) $(OBJECTS_UNIT) \
+	$(CLIENT) $(SERVER) $(DUPLEX_UNIT)
 
