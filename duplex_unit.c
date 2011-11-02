@@ -1,7 +1,11 @@
+#include <unistd.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
+
+#include "fchan.h"
+#include "bchan.h"
 
 #include "CUnit/Basic.h"
 
@@ -10,10 +14,37 @@
  *  BEGIN SUITE INITIALIZATION and CLEANUP FUNCTIONS
  */
 
-void duplex_rpc_unit_PkgInit(void)
+static int
+duplex_rpc_unit_PkgInit(int argc, char *argv[])
 {
-    /* nothing */
-}
+    char *host = NULL;
+    CLIENT *cl, *cl_backchan;
+    int opt;
+
+    while ((opt = getopt(argc, argv, "h:")) != -1) {
+        switch (opt) {
+        case 'h':
+            host = optarg;
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (! host) {
+        printf ("usage: %s server_host\n", argv[0]);
+        return (EXIT_FAILURE);
+    }
+
+    cl = clnt_create (host, FCHAN_PROG, FCHANV, "tcp");
+    if (cl == NULL) {
+        clnt_pcreateerror (host);
+        return (1);
+    }
+
+    return CUE_SUCCESS;
+
+} /* duplex_rpc_unit_PkgInit */
 
 /* 
  * The suite initialization function.
@@ -38,7 +69,7 @@ int clean_suite1(void)
 
 /* Tests */
 
-void test_1(void)
+void overlapped_forward_calls_1(void)
 {
     return;
 }
@@ -52,21 +83,25 @@ void check_1(void)
  * Returns a CUE_SUCCESS after a successful run, another
  * CUnit error code on failure.
  */
-int main()
+int main(int argc, char *argv[])
 { 
+    int32_t code = CUE_SUCCESS;
+
     /* initialize the CUnit test registry...  get this party started */
     if (CUE_SUCCESS != CU_initialize_registry())
        return CU_get_error();
 
     /* RPC Smoke Tests */
     CU_TestInfo rpc_smoke_tests[] = {
-      { "One test.", test_1 },
+      { "Overlapped forward calls 1.", overlapped_forward_calls_1 },
       { "Some check.", check_1 },
       CU_TEST_INFO_NULL,
     };
 
     /* More Tests */
 
+
+    /* Wire Up */
     CU_SuiteInfo suites[] = {
       { "Suite 1", init_suite1, clean_suite1,
 	rpc_smoke_tests },
@@ -76,12 +111,17 @@ int main()
     CU_ErrorCode error = CU_register_suites(suites);
 
     /* Initialize this package */
-    duplex_rpc_unit_PkgInit();
-    
-    /* Run all tests using the CUnit Basic interface */
-    CU_basic_set_mode(CU_BRM_VERBOSE);
-    CU_basic_run_tests();
-    CU_cleanup_registry();
+    code = duplex_rpc_unit_PkgInit(argc, argv);
+    switch (code) {
+    case CUE_SUCCESS:
+        /* Run all tests using the CUnit Basic interface */
+        CU_basic_set_mode(CU_BRM_VERBOSE);
+        CU_basic_run_tests();
+        CU_cleanup_registry();
+        break;
+    default:
+        break;
+    }
 
     return CU_get_error();
 }
