@@ -7,7 +7,7 @@ CLIENT = fchan_client
 SERVER = fchan_server
 DUPLEX_UNIT = duplex_unit
 
-SOURCES_UNIT.c = duplex_unit.c
+SOURCES_UNIT.c = duplex_unit.c fchan_xdr.c
 SOURCES_CLNT.c = fchan_client.c bchan_server.c
 SOURCES_CLNT.h = 
 SOURCES_SVC.c = fchan_server.c
@@ -27,7 +27,7 @@ OBJECTS_MISC = $(SOURCES_MISC.c:%.c=%.o) $(TARGETS_MISC.c:%.c=%.o)
 
 # Compiler flags 
 CUNIT=/opt/CUnit
-TIRPC = /home/matt/dev/nfs/new-tirpc/libtirpc-lbx
+TIRPC = /home/matt/dev/nfs/really-new-rpc/libtirpc-lbx
 
 CPPFLAGS += -D_REENTRANT
 CFLAGS += -g3 -O0 -I$(TIRPC)/tirpc/ -I$(CUNIT)/include \
@@ -44,6 +44,11 @@ $(TARGETS) : $(SOURCES.x) $(SOURCES2.x)
 	# messy
 	#rpcgen $(RPCGENFLAGS) $(SOURCES.x)
 	#rpcgen $(RPCGENFLAGS) $(SOURCES2.x)
+
+rpcstubs: $(SOURCES.x) $(SOURCES2.x)
+	# not clean, of course
+	rpcgen $(RPCGENFLAGS) $(SOURCES.x)
+	rpcgen $(RPCGENFLAGS) $(SOURCES2.x)
 
 $(OBJECTS_CLNT) : $(SOURCES_CLNT.c) $(SOURCES_CLNT.h) $(TARGETS_CLNT.c)
 

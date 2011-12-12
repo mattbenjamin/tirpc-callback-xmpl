@@ -41,7 +41,7 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
     }
 
     if (! host) {
-        printf ("usage: %s server_host\n", argv[0]);
+        printf ("usage: %s -h server_host\n", argv[0]);
         return (EXIT_FAILURE);
     }
 
@@ -78,18 +78,39 @@ int clean_suite1(void)
 
 /* Tests */
 
-void overlapped_forward_calls_1(void)
+/* Write 2^20 (1m) bytes in 32K blocks (2^5 count) */
+void write_1m_1(void)
 {
-    int code;
+    int ix, code, res;
     enum clnt_stat cl_stat;
+    write_args args[1];
 
-    cl_stat = clnt_call(cl_duplex_chan, BIND_CONN_TO_SESSION1,
-                        (xdrproc_t) xdr_void, (caddr_t) NULL /* argp */,
-                        (xdrproc_t) xdr_int, (caddr_t) &code,
-                        timeout);
+    res = 0;
 
+    /* setup args */
+    args->seqnum = 0;
+    args->off = 0;
+    args->len = 32768;
+    args->data.data_len = args->len;
+    args->data.data_val = malloc(32768 * sizeof(char));
+
+    for (ix = 0; ix < 32; ++ix) {
+
+        cl_stat = clnt_call(cl_duplex_chan, WRITE,
+                            (xdrproc_t) xdr_write_args, (caddr_t) args,
+                            (xdrproc_t) xdr_int, (caddr_t) &res,
+                            timeout);
+
+        CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
+
+        /* update buffer */
+        args->off += 32768;
+    }
+
+    free(args->data.data_val);
     return;
 }
+
 
 void check_1(void)
 {
@@ -110,13 +131,13 @@ int main(int argc, char *argv[])
 
     /* RPC Smoke Tests */
     CU_TestInfo rpc_smoke_tests[] = {
-      { "Overlapped forward calls 1.", overlapped_forward_calls_1 },
+      { "Write 1m 1.", write_1m_1 },
       { "Some check.", check_1 },
       CU_TEST_INFO_NULL,
     };
 
     /* More Tests */
-
+    /* ... */
 
     /* Wire Up */
     CU_SuiteInfo suites[] = {

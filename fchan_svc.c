@@ -21,10 +21,14 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 {
 	union {
 		fchan_msg sendmsg1_1_arg;
+		read_args read_1_arg;
+		write_args write_1_arg;
 	} argument;
 	union {
 		fchan_res sendmsg1_1_res;
 		int bind_conn_to_session1_1_res;
+		int read_1_res;
+		int write_1_res;
 	} result;
 	bool_t retval;
 	xdrproc_t _xdr_argument, _xdr_result;
@@ -45,6 +49,18 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 		_xdr_argument = (xdrproc_t) xdr_void;
 		_xdr_result = (xdrproc_t) xdr_int;
 		local = (bool_t (*) (char *, void *,  struct svc_req *))bind_conn_to_session1_1_svc;
+		break;
+
+	case READ:
+		_xdr_argument = (xdrproc_t) xdr_read_args;
+		_xdr_result = (xdrproc_t) xdr_int;
+		local = (bool_t (*) (char *, void *,  struct svc_req *))read_1_svc;
+		break;
+
+	case WRITE:
+		_xdr_argument = (xdrproc_t) xdr_write_args;
+		_xdr_result = (xdrproc_t) xdr_int;
+		local = (bool_t (*) (char *, void *,  struct svc_req *))write_1_svc;
 		break;
 
 	default:
@@ -74,16 +90,18 @@ int
 main (int argc, char **argv)
 {
 	register SVCXPRT *transp;
-        svc_init_params svc_params;
 
 	pmap_unset (FCHAN_PROG, FCHANV);
 
-        /* New tirpc init function must be called to initialize the
-         * library. */
-        svc_params.flags = SVC_INIT_EPOLL; /* use EPOLL event mgmt */
-        svc_params.max_connections = 1024;
-        svc_params.max_events = 300; /* don't know good values for this */
-        svc_init(&svc_params);
+	transp = svcudp_create(RPC_ANYSOCK);
+	if (transp == NULL) {
+		fprintf (stderr, "%s", "cannot create udp service.");
+		exit(1);
+	}
+	if (!svc_register(transp, FCHAN_PROG, FCHANV, fchan_prog_1, IPPROTO_UDP)) {
+		fprintf (stderr, "%s", "unable to register (FCHAN_PROG, FCHANV, udp).");
+		exit(1);
+	}
 
 	transp = svctcp_create(RPC_ANYSOCK, 0, 0);
 	if (transp == NULL) {

@@ -26,3 +26,21 @@ bind_conn_to_session1_1(void *argp, int *clnt_res, CLIENT *clnt)
 		(xdrproc_t) xdr_int, (caddr_t) clnt_res,
 		TIMEOUT));
 }
+
+enum clnt_stat 
+read_1(read_args *argp, int *clnt_res, CLIENT *clnt)
+{
+	return (clnt_call(clnt, READ,
+		(xdrproc_t) xdr_read_args, (caddr_t) argp,
+		(xdrproc_t) xdr_int, (caddr_t) clnt_res,
+		TIMEOUT));
+}
+
+enum clnt_stat 
+write_1(write_args *argp, int *clnt_res, CLIENT *clnt)
+{
+	return (clnt_call(clnt, WRITE,
+		(xdrproc_t) xdr_write_args, (caddr_t) argp,
+		(xdrproc_t) xdr_int, (caddr_t) clnt_res,
+		TIMEOUT));
+}

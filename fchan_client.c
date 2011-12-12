@@ -42,7 +42,7 @@ thread_delay_s(int s)
 extern void bchan_prog_1(struct svc_req *, register SVCXPRT *);
 
 void
-cowabunga_rpc_server(CLIENT *cl)
+backchannel_rpc_server(CLIENT *cl)
 {
     SVCXPRT *xprt;
 
@@ -143,7 +143,7 @@ main (int argc, char *argv[])
     }
 
     /* switch client to server endpoint and never return */
-    cowabunga_rpc_server(cl_backchan);
+    backchannel_rpc_server(cl_backchan);
 
     exit (0);
 }

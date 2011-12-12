@@ -98,6 +98,44 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
     return ( (r) ? FALSE : TRUE );
 }
 
+bool_t
+read_1_svc(read_args *args, int *res, struct svc_req *rqstp)
+{
+    bool_t retval = TRUE;
+
+    printf("svc rcpt read seqnum: %d fileno %d off %d len %d flags %d\n",
+	   args->seqnum,
+           args->fileno,
+           args->off,
+           args->len,
+           args->flags);
+
+    /* do something with data */
+
+    *res = 0;
+
+    return (retval);
+}
+
+bool_t
+write_1_svc(write_args *args, int *res, struct svc_req *rqstp)
+{
+    bool_t retval = TRUE;
+
+    printf("svc rcpt write seqnum: %d fileno %d off %d len %d flags %d\n",
+	   args->seqnum,
+           args->fileno,
+           args->off,
+           args->len,
+           args->flags);
+
+    /* do something with data */
+
+    *res = 0;
+
+    return (retval);
+}
+
 int
 fchan_prog_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
 {
