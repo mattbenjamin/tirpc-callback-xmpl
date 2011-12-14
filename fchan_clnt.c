@@ -28,11 +28,11 @@ bind_conn_to_session1_1(void *argp, int *clnt_res, CLIENT *clnt)
 }
 
 enum clnt_stat 
-read_1(read_args *argp, int *clnt_res, CLIENT *clnt)
+read_1(read_args *argp, read_res *clnt_res, CLIENT *clnt)
 {
 	return (clnt_call(clnt, READ,
 		(xdrproc_t) xdr_read_args, (caddr_t) argp,
-		(xdrproc_t) xdr_int, (caddr_t) clnt_res,
+		(xdrproc_t) xdr_read_res, (caddr_t) clnt_res,
 		TIMEOUT));
 }
 

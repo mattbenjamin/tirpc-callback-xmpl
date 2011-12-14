@@ -99,7 +99,7 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
 }
 
 bool_t
-read_1_svc(read_args *args, int *res, struct svc_req *rqstp)
+read_1_svc(read_args *args, read_res *res, struct svc_req *rqstp)
 {
     bool_t retval = TRUE;
 
@@ -110,9 +110,20 @@ read_1_svc(read_args *args, int *res, struct svc_req *rqstp)
            args->len,
            args->flags);
 
-    /* do something with data */
+    memset(res, 0, sizeof(read_res));
 
-    *res = 0;
+    switch (args->flags) {
+    case 0:
+        /* in this case, send a pattern */
+        res->flags = 0;
+        res->data.data_len = 32768;
+        res->data.data_val = malloc(32768 * sizeof(char));
+        sprintf(res->data.data_val, "%d %d", args->off, args->len);
+        res->eof = 0;
+        break;
+    default:
+        res->eof = 1;
+    }
 
     return (retval);
 }

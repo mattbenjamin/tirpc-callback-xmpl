@@ -78,6 +78,55 @@ int clean_suite1(void)
 
 /* Tests */
 
+#define FREE_READ_RES_NONE     0x0000
+#define FREE_READ_RES_FREESELF 0x0001
+
+static void
+free_read_res(read_res *res, unsigned int flags)
+{
+    if (!res)
+        return;
+    free(res->data.data_val);
+    if (flags & FREE_READ_RES_FREESELF)
+        free(res);
+    return;
+}
+
+/* Read 2^20 (1m) bytes in 32K blocks (2^5 count) */
+void read_1m_1(void)
+{
+    int ix, code;
+    enum clnt_stat cl_stat;
+    read_args args[1];
+    read_res res[1];
+
+    /* setup args */
+    args->seqnum = 0;
+    args->off = 0;
+    args->len = 32768;
+    args->flags = 0;
+
+    for (ix = 0; ix < 32; ++ix) {
+
+        memset(res, 0, sizeof(read_res)); /* zero res pointer members */
+
+        cl_stat = clnt_call(cl_duplex_chan, READ,
+                            (xdrproc_t) xdr_read_args, (caddr_t) args,
+                            (xdrproc_t) xdr_read_res, (caddr_t) res,
+                            timeout);
+
+	if (cl_stat != RPC_SUCCESS)
+	    clnt_perror (cl_duplex_chan, "read_1m_1 seq ix failed");
+
+        CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
+
+        /* TODO: maybe use results buffer */
+	free_read_res(res, FREE_READ_RES_NONE);
+    }
+
+    return;
+}
+
 /* Write 2^20 (1m) bytes in 32K blocks (2^5 count) */
 void write_1m_1(void)
 {
@@ -93,6 +142,7 @@ void write_1m_1(void)
     args->len = 32768;
     args->data.data_len = args->len;
     args->data.data_val = malloc(32768 * sizeof(char));
+    args->flags = 0;
 
     for (ix = 0; ix < 32; ++ix) {
 
@@ -105,12 +155,12 @@ void write_1m_1(void)
 
         /* update buffer */
         args->off += 32768;
+        args->seqnum++;
     }
 
     free(args->data.data_val);
     return;
 }
-
 
 void check_1(void)
 {
@@ -132,6 +182,7 @@ int main(int argc, char *argv[])
     /* RPC Smoke Tests */
     CU_TestInfo rpc_smoke_tests[] = {
       { "Write 1m 1.", write_1m_1 },
+      { "Read 1m 1.", read_1m_1 },
       { "Some check.", check_1 },
       CU_TEST_INFO_NULL,
     };

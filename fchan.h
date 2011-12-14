@@ -34,12 +34,18 @@ struct read_args {
 	u_int off;
 	u_int len;
 	u_int flags;
+};
+typedef struct read_args read_args;
+
+struct read_res {
+	u_int eof;
+	u_int flags;
 	struct {
 		u_int data_len;
 		char *data_val;
 	} data;
 };
-typedef struct read_args read_args;
+typedef struct read_res read_res;
 
 struct write_args {
 	u_int seqnum;
@@ -65,8 +71,8 @@ extern  bool_t sendmsg1_1_svc(fchan_msg *, fchan_res *, struct svc_req *);
 extern  enum clnt_stat bind_conn_to_session1_1(void *, int *, CLIENT *);
 extern  bool_t bind_conn_to_session1_1_svc(void *, int *, struct svc_req *);
 #define READ 3
-extern  enum clnt_stat read_1(read_args *, int *, CLIENT *);
-extern  bool_t read_1_svc(read_args *, int *, struct svc_req *);
+extern  enum clnt_stat read_1(read_args *, read_res *, CLIENT *);
+extern  bool_t read_1_svc(read_args *, read_res *, struct svc_req *);
 #define WRITE 4
 extern  enum clnt_stat write_1(write_args *, int *, CLIENT *);
 extern  bool_t write_1_svc(write_args *, int *, struct svc_req *);
@@ -94,12 +100,14 @@ extern int fchan_prog_1_freeresult ();
 extern  bool_t xdr_fchan_msg (XDR *, fchan_msg*);
 extern  bool_t xdr_fchan_res (XDR *, fchan_res*);
 extern  bool_t xdr_read_args (XDR *, read_args*);
+extern  bool_t xdr_read_res (XDR *, read_res*);
 extern  bool_t xdr_write_args (XDR *, write_args*);
 
 #else /* K&R C */
 extern bool_t xdr_fchan_msg ();
 extern bool_t xdr_fchan_res ();
 extern bool_t xdr_read_args ();
+extern bool_t xdr_read_res ();
 extern bool_t xdr_write_args ();
 
 #endif /* K&R C */

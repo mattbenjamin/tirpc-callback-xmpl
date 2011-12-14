@@ -27,7 +27,7 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 	union {
 		fchan_res sendmsg1_1_res;
 		int bind_conn_to_session1_1_res;
-		int read_1_res;
+		read_res read_1_res;
 		int write_1_res;
 	} result;
 	bool_t retval;
@@ -53,7 +53,7 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 
 	case READ:
 		_xdr_argument = (xdrproc_t) xdr_read_args;
-		_xdr_result = (xdrproc_t) xdr_int;
+		_xdr_result = (xdrproc_t) xdr_read_res;
 		local = (bool_t (*) (char *, void *,  struct svc_req *))read_1_svc;
 		break;
 

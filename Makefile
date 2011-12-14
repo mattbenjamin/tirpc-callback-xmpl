@@ -7,7 +7,7 @@ CLIENT = fchan_client
 SERVER = fchan_server
 DUPLEX_UNIT = duplex_unit
 
-SOURCES_UNIT.c = duplex_unit.c fchan_xdr.c
+SOURCES_UNIT.c = duplex_unit.c fchan_xdr.c fchan_clnt.c
 SOURCES_CLNT.c = fchan_client.c bchan_server.c
 SOURCES_CLNT.h = 
 SOURCES_SVC.c = fchan_server.c

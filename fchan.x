@@ -16,6 +16,11 @@ struct read_args {
        unsigned int off;
        unsigned int len;
        unsigned int flags;
+};
+
+struct read_res {
+       unsigned int eof;
+       unsigned int flags;
        opaque data<>;
 };
 
@@ -33,7 +38,7 @@ program FCHAN_PROG {
             fchan_res SENDMSG1(fchan_msg) = 1;
 	    int BIND_CONN_TO_SESSION1(void) = 2;
 	    /* read and write simulation */
-	    int READ(read_args) = 3;
+	    read_res READ(read_args) = 3;
 	    int WRITE(write_args) = 4;	    
 	} = 1;
 } = 0x20005001;
