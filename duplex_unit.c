@@ -106,9 +106,12 @@ void read_1m_1(void)
     args->len = 32768;
     args->flags = 0;
 
+    /* allocate -one- buffer for res */
+    memset(res, 0, sizeof(read_res)); /* zero res pointer members */
+
     for (ix = 0; ix < 32; ++ix) {
 
-        memset(res, 0, sizeof(read_res)); /* zero res pointer members */
+        args->off = ix * args->len;
 
         cl_stat = clnt_call(cl_duplex_chan, READ,
                             (xdrproc_t) xdr_read_args, (caddr_t) args,
@@ -121,8 +124,10 @@ void read_1m_1(void)
         CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
 
         /* TODO: maybe use results buffer */
-	free_read_res(res, FREE_READ_RES_NONE);
+        printf("read_1m_1: %s\n", res->data.data_val);
     }
+
+    free_read_res(res, FREE_READ_RES_NONE);
 
     return;
 }
