@@ -50,7 +50,10 @@ backchannel_rpc_server(CLIENT *cl)
 
     /* get a transport handle from our connected client
      * handle, cl is disposed for us */
-    xprt = svc_vc_create_cl(cl, 0, 0, SVC_VC_CREATE_CL_FLAG_DEDICATED);
+    xprt = svc_vc_create_cl( cl,
+                             0 /* sendsize */, 
+                             0 /* recvsize */,
+                             SVC_VC_CLNT_CREATE_SHARED);
     if (!xprt) {
 	fprintf(stderr, "%s\n", "Create SVCXPRT from CLIENT failed");
     }

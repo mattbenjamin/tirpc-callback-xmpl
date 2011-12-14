@@ -37,10 +37,10 @@ read_1(read_args *argp, read_res *clnt_res, CLIENT *clnt)
 }
 
 enum clnt_stat 
-write_1(write_args *argp, int *clnt_res, CLIENT *clnt)
+write_1(write_args *argp, write_res *clnt_res, CLIENT *clnt)
 {
 	return (clnt_call(clnt, WRITE,
 		(xdrproc_t) xdr_write_args, (caddr_t) argp,
-		(xdrproc_t) xdr_int, (caddr_t) clnt_res,
+		(xdrproc_t) xdr_write_res, (caddr_t) clnt_res,
 		TIMEOUT));
 }

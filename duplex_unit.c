@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <pthread.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -9,6 +10,7 @@
 
 #include "CUnit/Basic.h"
 
+#include "duplex_unit.h"
 
 /*
  *  BEGIN SUITE INITIALIZATION and CLEANUP FUNCTIONS
@@ -16,12 +18,102 @@
 
 char *host;
 CLIENT *cl_duplex_chan;
+SVCXPRT *duplex_xprt;
+
 static struct timeval timeout, default_timeout = { 25, 0 };
+
+void
+thread_delay_s(int s)
+{
+    time_t now;
+    struct timespec then;
+    pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
+
+    now = time(0);
+    then.tv_sec = now + s;
+    then.tv_nsec = 0;
+    
+    pthread_mutex_lock(&mtx);
+    pthread_cond_timedwait(&cv, &mtx, &then);
+    pthread_mutex_unlock(&mtx);
+}
+
+extern void bchan_prog_1(struct svc_req *, register SVCXPRT *);
+
+bool_t
+callback1_1_svc(bchan_msg *argp, bchan_res *result, struct svc_req *rqstp)
+{
+
+    bool_t retval = TRUE;
+
+    printf("svc rcpt bchan_msg msg1: %s msg2: %s seqnum: %d\n",
+	   argp->msg1, argp->msg2, argp->seqnum);
+
+    result->result = 0;
+    result->msg1 = strdup("bungee");
+
+    return (retval);
+}
+
+int
+bchan_prog_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
+{
+	xdr_free (xdr_result, result);
+
+	/*
+	 * Insert additional freeing code here, if needed
+	 */
+
+	return 1;
+}
+
+static void*
+backchannel_rpc_server(void *arg)
+{
+    svc_init_params svc_params;
+    CLIENT *cl;
+
+    printf("Starting RPC service\n");
+
+    /* New tirpc init function must be called to initialize the
+     * library. */
+    svc_params.flags = SVC_INIT_EPOLL; /* use EPOLL event mgmt */
+    svc_params.max_connections = 1024;
+    svc_params.max_events = 300; /* don't know good values for this */
+    svc_init(&svc_params);
+
+    cl = (CLIENT *) arg;
+
+    /* get a transport handle from our connected client
+     * handle, cl is disposed for us */
+    duplex_xprt = svc_vc_create_cl( cl,
+                                    0 /* sendsize */, 
+                                    0 /* recvsize */,
+                                    SVC_VC_CLNT_CREATE_SHARED);
+    if (!duplex_xprt) {
+	fprintf(stderr, "%s\n", "Create SVCXPRT from CLIENT failed");
+    }
+
+    /* register service */
+    if (!svc_register(duplex_xprt, BCHAN_PROG, BCHANV, bchan_prog_1,
+                      IPPROTO_TCP)) {
+	fprintf (stderr, "%s", "unable to register (BCHAN_PROG, BCHANV, tcp).");
+	exit(1);
+    }
+
+    /* service the backchannel */
+    svc_run (); /* XXX need something that supports shutdown */
+
+    return (NULL);
+}
 
 static int
 duplex_rpc_unit_PkgInit(int argc, char *argv[])
 {
-    int opt;
+    int opt, r;
+    pthread_t tid;
+
     host = NULL;
     cl_duplex_chan = NULL;
 
@@ -50,6 +142,12 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
         clnt_pcreateerror(host);
         return (1);
     }
+
+    /* start backchannel service using cl */
+    r =  pthread_create(&tid, NULL, &backchannel_rpc_server,
+                        (void*) cl_duplex_chan);
+
+    thread_delay_s(1);
 
     return CUE_SUCCESS;
 
@@ -123,8 +221,9 @@ void read_1m_1(void)
 
         CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
 
-        /* TODO: maybe use results buffer */
         printf("read_1m_1: %s\n", res->data.data_val);
+        if (res->eof)
+            break;
     }
 
     free_read_res(res, FREE_READ_RES_NONE);
@@ -167,6 +266,53 @@ void write_1m_1(void)
     return;
 }
 
+/* read 3 32K blocks at offset 0, tell the server to make an interleaved
+ * backchannel call after block2 */
+void read_3b_overlap_b2(void)
+{
+    int ix, code;
+    enum clnt_stat cl_stat;
+    read_args args[1];
+    read_res res[1];
+
+    /* setup args */
+    args->seqnum = 0;
+    args->off = 0;
+    args->len = 32768;
+    args->flags = 0;
+
+    /* allocate -one- buffer for res */
+    memset(res, 0, sizeof(read_res)); /* zero res pointer members */
+
+    for (ix = 0; ix < 4; ++ix) {
+
+        args->off = ix * args->len;
+
+        args->flags = 0;
+        if (ix == 2) {
+            args->flags = DUPLEX_UNIT_IMMED_CB;
+        }
+
+        cl_stat = clnt_call(cl_duplex_chan, READ,
+                            (xdrproc_t) xdr_read_args, (caddr_t) args,
+                            (xdrproc_t) xdr_read_res, (caddr_t) res,
+                            timeout);
+
+	if (cl_stat != RPC_SUCCESS)
+	    clnt_perror (cl_duplex_chan, "read_1m_1 seq ix failed");
+
+        CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
+
+        printf("read_1m_1: %s\n", res->data.data_val);
+        if (res->eof)
+            break;
+    }
+
+    free_read_res(res, FREE_READ_RES_NONE);
+
+    return;
+}
+
 void check_1(void)
 {
     CU_ASSERT_EQUAL(0,0);
@@ -188,6 +334,7 @@ int main(int argc, char *argv[])
     CU_TestInfo rpc_smoke_tests[] = {
       { "Write 1m 1.", write_1m_1 },
       { "Read 1m 1.", read_1m_1 },
+      { "Read 3 with async callback arrival after b2.", read_3b_overlap_b2 },
       { "Some check.", check_1 },
       CU_TEST_INFO_NULL,
     };

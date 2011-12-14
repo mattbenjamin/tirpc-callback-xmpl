@@ -28,7 +28,7 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 		fchan_res sendmsg1_1_res;
 		int bind_conn_to_session1_1_res;
 		read_res read_1_res;
-		int write_1_res;
+		write_res write_1_res;
 	} result;
 	bool_t retval;
 	xdrproc_t _xdr_argument, _xdr_result;
@@ -59,7 +59,7 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 
 	case WRITE:
 		_xdr_argument = (xdrproc_t) xdr_write_args;
-		_xdr_result = (xdrproc_t) xdr_int;
+		_xdr_result = (xdrproc_t) xdr_write_res;
 		local = (bool_t (*) (char *, void *,  struct svc_req *))write_1_svc;
 		break;
 

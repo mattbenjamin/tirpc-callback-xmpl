@@ -34,12 +34,18 @@ struct read_args {
 	u_int off;
 	u_int len;
 	u_int flags;
+	u_int flags2;
+	u_int flags3;
+	u_int flags4;
 };
 typedef struct read_args read_args;
 
 struct read_res {
 	u_int eof;
 	u_int flags;
+	u_int flags2;
+	u_int flags3;
+	u_int flags4;
 	struct {
 		u_int data_len;
 		char *data_val;
@@ -53,12 +59,24 @@ struct write_args {
 	u_int off;
 	u_int len;
 	u_int flags;
+	u_int flags2;
+	u_int flags3;
+	u_int flags4;
 	struct {
 		u_int data_len;
 		char *data_val;
 	} data;
 };
 typedef struct write_args write_args;
+
+struct write_res {
+	u_int eof;
+	u_int flags;
+	u_int flags2;
+	u_int flags3;
+	u_int flags4;
+};
+typedef struct write_res write_res;
 
 #define FCHAN_PROG 0x20005001
 #define FCHANV 1
@@ -74,8 +92,8 @@ extern  bool_t bind_conn_to_session1_1_svc(void *, int *, struct svc_req *);
 extern  enum clnt_stat read_1(read_args *, read_res *, CLIENT *);
 extern  bool_t read_1_svc(read_args *, read_res *, struct svc_req *);
 #define WRITE 4
-extern  enum clnt_stat write_1(write_args *, int *, CLIENT *);
-extern  bool_t write_1_svc(write_args *, int *, struct svc_req *);
+extern  enum clnt_stat write_1(write_args *, write_res *, CLIENT *);
+extern  bool_t write_1_svc(write_args *, write_res *, struct svc_req *);
 extern int fchan_prog_1_freeresult (SVCXPRT *, xdrproc_t, caddr_t);
 
 #else /* K&R C */
@@ -102,6 +120,7 @@ extern  bool_t xdr_fchan_res (XDR *, fchan_res*);
 extern  bool_t xdr_read_args (XDR *, read_args*);
 extern  bool_t xdr_read_res (XDR *, read_res*);
 extern  bool_t xdr_write_args (XDR *, write_args*);
+extern  bool_t xdr_write_res (XDR *, write_res*);
 
 #else /* K&R C */
 extern bool_t xdr_fchan_msg ();
@@ -109,6 +128,7 @@ extern bool_t xdr_fchan_res ();
 extern bool_t xdr_read_args ();
 extern bool_t xdr_read_res ();
 extern bool_t xdr_write_args ();
+extern bool_t xdr_write_res ();
 
 #endif /* K&R C */
 

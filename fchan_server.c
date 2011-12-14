@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include "fchan.h"
 #include "bchan.h"
+#include "duplex_unit.h"
 
 void
 thread_delay_s(int s)
@@ -98,6 +99,13 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
     return ( (r) ? FALSE : TRUE );
 }
 
+int
+read_1_svc_callback(struct svc_req *rqstp)
+{
+
+    return (0);
+}
+
 bool_t
 read_1_svc(read_args *args, read_res *res, struct svc_req *rqstp)
 {
@@ -112,24 +120,21 @@ read_1_svc(read_args *args, read_res *res, struct svc_req *rqstp)
 
     memset(res, 0, sizeof(read_res));
 
-    switch (args->flags) {
-    case 0:
-        /* in this case, send a pattern */
-        res->flags = 0;
-        res->data.data_len = 32768;
-        res->data.data_val = malloc(32768 * sizeof(char));
-        sprintf(res->data.data_val, "%d %d", args->off, args->len);
-        res->eof = 0;
-        break;
-    default:
-        res->eof = 1;
+    /* in this case, send a pattern */
+    res->flags = 0;
+    res->data.data_len = 32768;
+    res->data.data_val = malloc(32768 * sizeof(char));
+    sprintf(res->data.data_val, "%d %d", args->off, args->len);
+
+    if (args->flags & DUPLEX_UNIT_IMMED_CB) {
+        printf("callback!\n");
     }
 
     return (retval);
 }
 
 bool_t
-write_1_svc(write_args *args, int *res, struct svc_req *rqstp)
+write_1_svc(write_args *args, write_res *res, struct svc_req *rqstp)
 {
     bool_t retval = TRUE;
 
@@ -142,7 +147,7 @@ write_1_svc(write_args *args, int *res, struct svc_req *rqstp)
 
     /* do something with data */
 
-    *res = 0;
+    memset(res, 0, sizeof(write_res));
 
     return (retval);
 }
