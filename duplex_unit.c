@@ -16,7 +16,8 @@
  *  BEGIN SUITE INITIALIZATION and CLEANUP FUNCTIONS
  */
 
-char *host;
+char *server_host;
+int server_port;
 CLIENT *cl_duplex_chan;
 SVCXPRT *duplex_xprt;
 
@@ -108,21 +109,63 @@ backchannel_rpc_server(void *arg)
     return (NULL);
 }
 
+static CLIENT*
+duplex_unit_clnt_create(const char *host, const int port)
+{
+    struct sockaddr_in saddr;
+    struct netbuf raddr;
+    CLIENT *cl = NULL;
+    int fd, code = 0;
+
+    fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd == -1)
+        goto out;
+ 
+    memset(&saddr, 0, sizeof(struct sockaddr_in));
+ 
+    saddr.sin_family = AF_INET;
+    saddr.sin_port = htons(port);
+    code = inet_pton(AF_INET, host, &saddr.sin_addr);
+    if (code <= 0) {
+        fprintf(stderr, "%s (%d)\n", "Error returned from inet_pton", code);
+        goto out;
+    }
+
+    /* cleanest to connect ourselves */
+    code = connect(fd, (struct sockaddr *) &saddr, sizeof(struct sockaddr_in));
+    if (code == -1) {
+        fprintf(stderr, "%s (%s, port %d)\n", "Connect failed", host, port);
+        goto out;
+    }
+
+    raddr.buf = &saddr;
+    raddr.maxlen = raddr.len = sizeof(struct sockaddr_in);
+    cl = clnt_vc_create2(fd, &raddr, FCHAN_PROG, FCHANV,
+                         0 /* sendsz */,
+                         0 /* recvsz */,
+                         0 /* flags */);
+out:
+    return (cl);
+}
+
 static int
 duplex_rpc_unit_PkgInit(int argc, char *argv[])
 {
     int opt, r;
     pthread_t tid;
 
-    host = NULL;
+    server_host = NULL;
     cl_duplex_chan = NULL;
 
     timeout = default_timeout;
 
-    while ((opt = getopt(argc, argv, "h:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "h:t:p:")) != -1) {
         switch (opt) {
         case 'h':
-            host = optarg;
+            server_host = optarg;
+            break;
+        case 'p':
+            server_port = atoi(optarg);
             break;
         case 't':
             timeout.tv_sec = atol(optarg);
@@ -132,14 +175,14 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
         }
     }
 
-    if (! host) {
-        printf ("usage: %s -h server_host\n", argv[0]);
+    if (! server_host) {
+        printf ("usage: %s -h server_host -p server_port\n", argv[0]);
         return (EXIT_FAILURE);
     }
 
-    cl_duplex_chan = clnt_create(host, FCHAN_PROG, FCHANV, "tcp");
+    cl_duplex_chan = duplex_unit_clnt_create(server_host, server_port);
     if (cl_duplex_chan == NULL) {
-        clnt_pcreateerror(host);
+        clnt_pcreateerror(server_host);
         return (1);
     }
 
