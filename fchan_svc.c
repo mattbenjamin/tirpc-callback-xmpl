@@ -86,6 +86,7 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 	return;
 }
 
+#if 0
 int
 main (int argc, char **argv)
 {
@@ -118,3 +119,4 @@ main (int argc, char **argv)
 	exit (1);
 	/* NOTREACHED */
 }
+#endif
