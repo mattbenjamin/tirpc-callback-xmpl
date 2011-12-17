@@ -291,6 +291,10 @@ void write_1m_1(void)
     args->data.data_val = malloc(32768 * sizeof(char));
     args->flags = 0;
 
+    args->flags2 = 1;
+    args->flags3 = 2;
+    args->flags4 = 3;
+
     for (ix = 0; ix < 32; ++ix) {
 
         cl_stat = clnt_call(cl_duplex_chan, WRITE,
@@ -303,6 +307,10 @@ void write_1m_1(void)
         /* update buffer */
         args->off += 32768;
         args->seqnum++;
+
+        args->flags2++;
+        args->flags3++;
+        args->flags4++;
     }
 
     free(args->data.data_val);

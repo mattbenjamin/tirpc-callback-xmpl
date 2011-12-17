@@ -263,7 +263,7 @@ fchan_server_create(unsigned int flags)
     svc_init_params svc_params;
     struct sockaddr_in saddr;
     struct t_bind bindaddr; /* XXX expected by svc_tli_create  */
-    int code, fd;
+    int code, one, fd;
 
     printf("Starting RPC service\n");
 
@@ -297,6 +297,9 @@ fchan_server_create(unsigned int flags)
             exit(1);
         }
 
+        /* more nicely support restarts */
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
         memset(&saddr, 0, sizeof(struct sockaddr_in));
 
         saddr.sin_family = AF_INET;
@@ -308,8 +311,11 @@ fchan_server_create(unsigned int flags)
             bindaddr.addr.len = sizeof(struct sockaddr_in);
         bindaddr.qlen = 10;
         
-        xprt = svc_tli_create(
-            fd, NULL /* nconf */, &bindaddr, 0 /* sendsz */, 0 /* recvsz */);
+        xprt = svc_tli_create(fd,
+                              NULL /* nconf */,
+                              &bindaddr,
+                              0 /* sendsz */,
+                              0 /* recvsz */);
         if (! xprt) {
             perror("error svc_fd_create failed");
             exit(1);
