@@ -7,6 +7,7 @@
 
 #include "fchan.h"
 #include "bchan.h"
+#include <rpc/svc.h>
 
 #include "CUnit/Basic.h"
 
@@ -69,11 +70,91 @@ bchan_prog_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
 	return 1;
 }
 
+#define	RQCRED_SIZE	400	/* this size is excessive */
+
+static bool_t
+duplex_unit_getreq(SVCXPRT *xprt)
+{
+  struct svc_req r;
+  struct rpc_msg msg;
+  int prog_found;
+  rpcvers_t low_vers;
+  rpcvers_t high_vers;
+
+  enum xprt_stat stat;
+  char cred_area[2 * MAX_AUTH_BYTES + RQCRED_SIZE];
+
+  msg.rm_call.cb_cred.oa_base = cred_area;
+  msg.rm_call.cb_verf.oa_base = &(cred_area[MAX_AUTH_BYTES]);
+  r.rq_clntcred = &(cred_area[2 * MAX_AUTH_BYTES]);
+
+  /* now receive msgs from xprtprt (support batch calls) */
+  do
+    {
+      if (SVC_RECV (xprt, &msg))
+        {
+	  /* now find the exported program and call it */
+          svc_vers_range_t vrange;
+          svc_lookup_result_t lkp_res;
+          svc_rec_t *svc_rec;
+	  enum auth_stat why;
+
+	  r.rq_xprt = xprt;
+	  r.rq_prog = msg.rm_call.cb_prog;
+	  r.rq_vers = msg.rm_call.cb_vers;
+	  r.rq_proc = msg.rm_call.cb_proc;
+	  r.rq_cred = msg.rm_call.cb_cred;
+
+	  /* first authenticate the message */
+	  if ((why = _authenticate (&r, &msg)) != AUTH_OK)
+	    {
+	      svcerr_auth (xprt, why);
+	      goto call_done;
+	    }
+
+          lkp_res = svc_lookup(&svc_rec, &vrange, r.rq_prog, r.rq_vers,
+                               NULL, 0);
+          switch (lkp_res) {
+          case SVC_LKP_SUCCESS:
+              (*svc_rec->sc_dispatch) (&r, xprt);
+              goto call_done;
+              break;
+          SVC_LKP_VERS_NOTFOUND:
+              svcerr_progvers (xprt, low_vers, high_vers);
+          default:
+              svcerr_noprog (xprt);
+              break;
+          }
+        } /* SVC_RECV again? */
+
+      /*
+       * Check if the xprt has been disconnected in a
+       * recursive call in the service dispatch routine.
+       * If so, then break.
+       */
+      if (!svc_validate_xprt_list(xprt))
+          break;
+    call_done:
+      if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
+	{
+	  SVC_DESTROY (xprt);
+	  break;
+	}
+    else if ((xprt->xp_auth != NULL) &&
+	     (xprt->xp_auth->svc_ah_private == NULL))
+	{
+	  xprt->xp_auth = NULL;
+	}
+    }
+  while (stat == XPRT_MOREREQS);
+}
+
 static void*
 backchannel_rpc_server(void *arg)
 {
     svc_init_params svc_params;
     CLIENT *cl;
+    int code;
 
     printf("Starting RPC service\n");
 
@@ -95,6 +176,9 @@ backchannel_rpc_server(void *arg)
     if (!duplex_xprt) {
 	fprintf(stderr, "%s\n", "Create SVCXPRT from CLIENT failed");
     }
+
+    /* install private getreq handler */
+    code = SVC_CONTROL(duplex_xprt, SVCSET_XP_GETREQ, duplex_unit_getreq);
 
     /* register service */
     if (!svc_register(duplex_xprt, BCHAN_PROG, BCHANV, bchan_prog_1,
@@ -186,9 +270,11 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
         return (1);
     }
 
+#if 1
     /* start backchannel service using cl */
     r =  pthread_create(&tid, NULL, &backchannel_rpc_server,
                         (void*) cl_duplex_chan);
+#endif
 
     thread_delay_s(1);
 
@@ -259,8 +345,11 @@ void read_1m_1(void)
                             (xdrproc_t) xdr_read_res, (caddr_t) res,
                             timeout);
 
-	if (cl_stat != RPC_SUCCESS)
-	    clnt_perror (cl_duplex_chan, "read_1m_1 seq ix failed");
+	if (cl_stat != RPC_SUCCESS) {
+            char seqbuf[128];
+            sprintf(seqbuf, "read_1m_1 %d failed", ix);
+	    clnt_perror (cl_duplex_chan, seqbuf);
+        }
 
         CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
 
@@ -295,12 +384,20 @@ void write_1m_1(void)
     args->flags3 = 2;
     args->flags4 = 3;
 
+    printf("\n");
+
     for (ix = 0; ix < 32; ++ix) {
 
         cl_stat = clnt_call(cl_duplex_chan, WRITE,
                             (xdrproc_t) xdr_write_args, (caddr_t) args,
                             (xdrproc_t) xdr_int, (caddr_t) &res,
                             timeout);
+
+	if (cl_stat != RPC_SUCCESS) {
+            char seqbuf[128];
+            sprintf(seqbuf, "write_1m_1 %d failed", ix);
+	    clnt_perror (cl_duplex_chan, seqbuf);
+        }
 
         CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
 
@@ -332,7 +429,7 @@ void read_3b_overlap_b2(void)
     args->len = 32768;
     args->flags = 0;
 
-    /* allocate -one- buffer for res */
+    /* allocate one buffer for res */
     memset(res, 0, sizeof(read_res)); /* zero res pointer members */
 
     for (ix = 0; ix < 4; ++ix) {
@@ -349,8 +446,11 @@ void read_3b_overlap_b2(void)
                             (xdrproc_t) xdr_read_res, (caddr_t) res,
                             timeout);
 
-	if (cl_stat != RPC_SUCCESS)
-	    clnt_perror (cl_duplex_chan, "read_1m_1 seq ix failed");
+	if (cl_stat != RPC_SUCCESS) {
+            char seqbuf[128];
+            sprintf(seqbuf, "read_1m_1 %d failed", ix);
+	    clnt_perror (cl_duplex_chan, seqbuf);
+        }
 
         CU_ASSERT_EQUAL(cl_stat, RPC_SUCCESS);
 
