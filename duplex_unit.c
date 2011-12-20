@@ -22,6 +22,41 @@ int server_port;
 CLIENT *cl_duplex_chan;
 SVCXPRT *duplex_xprt;
 
+static bool_t backchan_svc_started = FALSE;
+static pthread_mutex_t backchan_svc_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t backchan_svc_cv = PTHREAD_COND_INITIALIZER;
+
+void
+post_backchan_start()
+{
+    pthread_mutex_lock(&backchan_svc_mtx);
+    backchan_svc_started = TRUE;
+    pthread_cond_broadcast(&backchan_svc_cv);
+    pthread_mutex_unlock(&backchan_svc_mtx);
+}
+
+void
+sync_backchan_start()
+{
+    bool_t locked;
+    pthread_mutex_lock(&backchan_svc_mtx);
+    locked = TRUE;
+
+    if (backchan_svc_started)
+        goto unlock;
+
+    pthread_mutex_unlock(&backchan_svc_mtx);
+    while (! backchan_svc_started) {
+        pthread_mutex_lock(&backchan_svc_mtx);
+        pthread_cond_wait(&backchan_svc_cv, &backchan_svc_mtx);
+        pthread_mutex_unlock(&backchan_svc_mtx);
+    }
+    
+
+unlock:
+    pthread_mutex_unlock(&backchan_svc_mtx);
+}
+
 static struct timeval timeout, default_timeout = { 25, 0 };
 
 void
@@ -187,6 +222,8 @@ backchannel_rpc_server(void *arg)
 	exit(1);
     }
 
+    post_backchan_start();
+
     /* service the backchannel */
     svc_run (); /* XXX need something that supports shutdown */
 
@@ -270,12 +307,11 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
         return (1);
     }
 
-#if 1
     /* start backchannel service using cl */
     r =  pthread_create(&tid, NULL, &backchannel_rpc_server,
                         (void*) cl_duplex_chan);
-#endif
 
+    sync_backchan_start();
     thread_delay_s(1);
 
     return CUE_SUCCESS;
