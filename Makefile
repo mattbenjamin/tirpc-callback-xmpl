@@ -30,7 +30,7 @@ CUNIT=/opt/CUnit
 TIRPC = /home/matt/dev/nfs/really-new-rpc/libtirpc-lbx
 
 CPPFLAGS += -D_REENTRANT
-CFLAGS += -g3 -O0 -I$(TIRPC)/tirpc/ -I$(CUNIT)/include \
+CFLAGS += -g3 -O0 -fPIC -DPIC -I$(TIRPC)/tirpc/ -I$(CUNIT)/include \
 	-D_REENTRANT -DRPC_DUPLEX
 LDFLAGS += -L$(CUNIT)/lib $(TIRPC)/src/.libs/libtirpc.a \
 	-lnsl -lcunit -lpthread

@@ -1,13 +1,14 @@
-#include <unistd.h>
 #include <pthread.h>
+#include <reentrant.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "fchan.h"
 #include "bchan.h"
-#include <rpc/svc.h>
+#include <rpc/rpc.h>
 
 #include "CUnit/Basic.h"
 
@@ -21,6 +22,7 @@ char *server_host;
 int server_port;
 CLIENT *cl_duplex_chan;
 SVCXPRT *duplex_xprt;
+pthread_t bchan_tid;
 
 static bool_t backchan_svc_started = FALSE;
 static pthread_mutex_t backchan_svc_mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -146,9 +148,15 @@ duplex_unit_getreq(SVCXPRT *xprt)
   struct svc_req r;
   struct rpc_msg *msg;
   enum xprt_stat stat;
+  sigset_t mask;
+  bool_t destroyed;
 
   msg = alloc_rpc_msg();
   svc_set_rq_clntcred(&r, msg);
+  destroyed = FALSE;
+
+  /* serialize xprt */
+  clnt_vc_fd_lock(xprt, &mask);
 
   /* now receive msgs from xprt (support batch calls) */
   do
@@ -161,8 +169,8 @@ duplex_unit_getreq(SVCXPRT *xprt)
 
             /* the goal is not force a control transfer in the common
              * case.  the likelihood can be reduced by updating the
-             * epoll registration of xprt.xp_fd around clint_calls--it
-             * remains to be seen if this is a win */
+             * epoll registration of xprt.xp_fd between around calls
+             * and also around svc callouts */
 
             /* XXX do it */
 
@@ -198,7 +206,8 @@ duplex_unit_getreq(SVCXPRT *xprt)
               svcerr_noprog (xprt);
               break;
           }
-        } /* SVC_RECV again? */
+        } /* SVC_RECV again? probably want to try a non-blocking
+           * recv or MSG_PEEK */
 
       /*
        * Check if the xprt has been disconnected in a
@@ -208,18 +217,26 @@ duplex_unit_getreq(SVCXPRT *xprt)
       if (!svc_validate_xprt_list(xprt))
           break;
     call_done:
+      /* XXX locking and destructive ops on xprt need to be reviewed */
       if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
 	{
-	  SVC_DESTROY (xprt);
-	  break;
+            clnt_vc_fd_unlock(xprt, &mask);
+            SVC_DESTROY (xprt);
+            destroyed = TRUE;
+            break;
 	}
     else if ((xprt->xp_auth != NULL) &&
 	     (xprt->xp_auth->svc_ah_private == NULL))
 	{
-	  xprt->xp_auth = NULL;
+            xprt->xp_auth = NULL;
 	}
     }
   while (stat == XPRT_MOREREQS);
+
+  free_rpc_msg(msg);
+
+  if (! destroyed)
+      clnt_vc_fd_unlock(xprt, &mask);
 }
 
 static void*
@@ -263,7 +280,13 @@ backchannel_rpc_server(void *arg)
     post_backchan_start();
 
     /* service the backchannel */
-    svc_run (); /* XXX need something that supports shutdown */
+    svc_run ();
+
+    /* signalled */
+    svc_unregister(BCHAN_PROG, BCHANV); /* and free it? */
+
+    /* clean up */
+    SVC_DESTROY(duplex_xprt);
 
     return (NULL);
 }
@@ -311,7 +334,6 @@ static int
 duplex_rpc_unit_PkgInit(int argc, char *argv[])
 {
     int opt, r;
-    pthread_t tid;
 
     server_host = NULL;
     cl_duplex_chan = NULL;
@@ -346,7 +368,7 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
     }
 
     /* start backchannel service using cl */
-    r =  pthread_create(&tid, NULL, &backchannel_rpc_server,
+    r =  pthread_create(&bchan_tid, NULL, &backchannel_rpc_server,
                         (void*) cl_duplex_chan);
 
     sync_backchan_start();
@@ -365,7 +387,7 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
 int init_suite1(void)
 {
 
-    return 0;
+    return (0);
 }
 
 /* The suite cleanup function.
@@ -374,7 +396,7 @@ int init_suite1(void)
  */
 int clean_suite1(void)
 {
-    return 0;
+    return (0);
 }
 
 /* Tests */
@@ -588,6 +610,10 @@ int main(int argc, char *argv[])
     default:
         break;
     }
+
+    svc_exit(); /* post shutdown to the backchannel */
+    pthread_join(bchan_tid, NULL);
+    CLNT_DESTROY(cl_duplex_chan);
 
     return CU_get_error();
 }
