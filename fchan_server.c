@@ -14,6 +14,8 @@
 
 #include "duplex_unit.h"
 
+static CLIENT *duplex_clnt = NULL;
+
 void
 thread_delay_s(int s)
 {
@@ -43,8 +45,9 @@ fchan_callbackthread(void *arg)
     printf("fchan_callbackthread started\n");
 
     /* convert xprt to a dedicated client channel */
-    cl = svc_vc_clnt_create(xprt, BCHAN_PROG, BCHANV,
-			    SVC_VC_CLNT_CREATE_DEDICATED);
+    cl = clnt_dplx_create_from_svc(xprt,
+                                   BCHAN_PROG, BCHANV,
+                                   SVC_DPLX_CLNT_CREATE_DEDICATED);
 
     callback1_1_arg.seqnum = 0;
 
@@ -110,10 +113,38 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
     return ( (r) ? FALSE : TRUE );
 }
 
+/* Send a synchronous callback on the shared RPC channel. */
 int
-read_1_svc_callback(struct svc_req *rqstp)
+read_1_svc_callback(read_args *args, struct svc_req *rq)
 {
+    enum clnt_stat cl_stat;
+    bchan_msg callback1_1_arg[1];
+    bchan_res callback1_1_res[1];
 
+    SVCXPRT *xprt = rq->rq_xprt;
+    static struct timeval timeout = { 25, 0 };
+
+    /* convert xprt to a shared client channel */
+    if (! duplex_clnt)
+        duplex_clnt = clnt_dplx_create_from_svc(
+            xprt,
+            BCHAN_PROG, BCHANV,
+            SVC_DPLX_CLNT_CREATE_SHARED);
+
+    fprintf(stderr, "read_1_svc_callback before call\n");
+
+    callback1_1_arg->seqnum = 0;
+    callback1_1_arg->msg1 = strdup("read_1_svc_callback");
+    callback1_1_arg->msg2 = strdup("sync");
+
+    cl_stat = clnt_call(duplex_clnt, CALLBACK1,
+                        (xdrproc_t) xdr_bchan_msg, (caddr_t) callback1_1_arg,
+                        (xdrproc_t) xdr_bchan_res, (caddr_t) callback1_1_res,
+                        timeout);
+
+    if (cl_stat != RPC_SUCCESS)
+        clnt_perror(duplex_clnt, "callback1_1 failed");
+    
     return (0);
 }
 
@@ -138,7 +169,7 @@ read_1_svc(read_args *args, read_res *res, struct svc_req *rqstp)
     sprintf(res->data.data_val, "%d %d", args->off, args->len);
 
     if (args->flags & DUPLEX_UNIT_IMMED_CB) {
-        printf("callback!\n");
+        read_1_svc_callback(args, rqstp);
     }
 
     return (retval);

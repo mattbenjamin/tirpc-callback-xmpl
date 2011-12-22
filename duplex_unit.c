@@ -156,7 +156,7 @@ duplex_unit_getreq(SVCXPRT *xprt)
   destroyed = FALSE;
 
   /* serialize xprt */
-  clnt_vc_fd_lock(xprt, &mask);
+  clnt_vc_fd_lock(xprt, &mask /*, "duplex_unit_getreq" */);
 
   /* now receive msgs from xprt (support batch calls) */
   do
@@ -164,7 +164,7 @@ duplex_unit_getreq(SVCXPRT *xprt)
       if (SVC_RECV (xprt, msg))
         {
 
-         /* if msg.rm_direction=REPLY, another thread is waiting
+         /* if msg->rm_direction=REPLY, another thread is waiting
           * to handle it */
 
             /* the goal is not force a control transfer in the common
@@ -172,7 +172,8 @@ duplex_unit_getreq(SVCXPRT *xprt)
              * epoll registration of xprt.xp_fd between around calls
              * and also around svc callouts */
 
-            /* XXX do it */
+            if (msg->rm_direction == REPLY)
+                abort();
 
 	  /* now find the exported program and call it */
           svc_vers_range_t vrange;
@@ -220,8 +221,10 @@ duplex_unit_getreq(SVCXPRT *xprt)
       /* XXX locking and destructive ops on xprt need to be reviewed */
       if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
 	{
-            clnt_vc_fd_unlock(xprt, &mask);
+            clnt_vc_fd_unlock(xprt, &mask /* , "duplex_unit_getreq" */);
+#if 0 /* the case is interesting, but we don't need to double free xprt */
             SVC_DESTROY (xprt);
+#endif
             destroyed = TRUE;
             break;
 	}
@@ -259,10 +262,10 @@ backchannel_rpc_server(void *arg)
 
     /* get a transport handle from our connected client
      * handle, cl is disposed for us */
-    duplex_xprt = svc_vc_create_cl( cl,
-                                    0 /* sendsize */, 
-                                    0 /* recvsize */,
-                                    SVC_VC_CLNT_CREATE_SHARED);
+    duplex_xprt = svc_dplx_create_from_clnt(cl,
+                                            0 /* sendsz */,
+                                            0 /* recvsz */,
+                                            SVC_DPLX_CLNT_CREATE_SHARED);
     if (!duplex_xprt) {
 	fprintf(stderr, "%s\n", "Create SVCXPRT from CLIENT failed");
     }
@@ -396,6 +399,10 @@ int init_suite1(void)
  */
 int clean_suite1(void)
 {
+    svc_exit(); /* post shutdown to the backchannel */
+    pthread_join(bchan_tid, NULL);
+    CLNT_DESTROY(cl_duplex_chan);
+
     return (0);
 }
 
@@ -610,10 +617,6 @@ int main(int argc, char *argv[])
     default:
         break;
     }
-
-    svc_exit(); /* post shutdown to the backchannel */
-    pthread_join(bchan_tid, NULL);
-    CLNT_DESTROY(cl_duplex_chan);
 
     return CU_get_error();
 }
