@@ -107,34 +107,6 @@ bchan_prog_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
 	return 1;
 }
 
-#define	RQCRED_SIZE	400	/* this size is excessive */
-
-/* XXX prototyping for generic svc_duplex */
-static struct rpc_msg* alloc_rpc_msg()
-{
-    /* XXX later we will likely use pool allocators */
-    struct rpc_msg *msg = mem_alloc(sizeof(struct rpc_msg));
-    if (! msg) {
-        fprintf(stderr, "allocation failure in alloc_rpc_msg");
-        goto out;
-    }
-    msg->rm_call.cb_cred.oa_base = mem_alloc(2 * MAX_AUTH_BYTES + RQCRED_SIZE);
-    if (! msg->rm_call.cb_cred.oa_base) {
-        fprintf(stderr, "allocation failure in alloc_rpc_msg");
-        goto out;
-    }
-    msg->rm_call.cb_verf.oa_base =
-        msg->rm_call.cb_cred.oa_base + MAX_AUTH_BYTES;
-out:
-    return (msg);
-}
-
-static void free_rpc_msg(struct rpc_msg *msg)
-{
-    mem_free(msg->rm_call.cb_cred.oa_base, 2 * MAX_AUTH_BYTES + RQCRED_SIZE);
-    mem_free(msg, sizeof(struct rpc_msg));
-}
-
 static inline void
 svc_set_rq_clntcred(struct svc_req *r, struct rpc_msg *msg)
 {
