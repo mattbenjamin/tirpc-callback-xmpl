@@ -59,7 +59,7 @@ unlock:
     pthread_mutex_unlock(&backchan_svc_mtx);
 }
 
-static struct timeval timeout, default_timeout = { 25, 0 };
+static struct timeval timeout, default_timeout = { 120, 0 };
 
 void
 thread_delay_s(int s)

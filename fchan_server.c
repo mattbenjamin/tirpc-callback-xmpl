@@ -10,6 +10,7 @@
 #include <string.h>
 #include <memory.h>
 #include <sys/socket.h>
+#include <sys/signal.h>
 #include <netinet/in.h>
 
 #include "duplex_unit.h"
@@ -133,7 +134,7 @@ read_1_svc_callback(read_args *args, struct svc_req *rq)
 
     fprintf(stderr, "read_1_svc_callback before call\n");
 
-    callback1_1_arg->seqnum = 0;
+    callback1_1_arg->seqnum = 969;
     callback1_1_arg->msg1 = strdup("read_1_svc_callback");
     callback1_1_arg->msg2 = strdup("sync");
 
@@ -288,6 +289,15 @@ int server_port;
 #define FCHAN_SVC_UDP 0x0001
 #define FCHAN_SVC_TCP 0x0002
 
+static void
+fchan_signals()
+{
+    sigset_t mask, newmask;
+    sigemptyset(&newmask);
+    sigaddset(&newmask, SIGPIPE);
+    pthread_sigmask(SIG_SETMASK, &newmask, &mask);
+}
+
 static int
 fchan_server_create(unsigned int flags)
 {
@@ -306,6 +316,8 @@ fchan_server_create(unsigned int flags)
     svc_init(&svc_params);
 
     pmap_unset (FCHAN_PROG, FCHANV);
+
+    fchan_signals();
 
     switch (server_port) {
     case 0:
