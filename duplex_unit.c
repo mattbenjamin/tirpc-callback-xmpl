@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
+#include <sys/signal.h>
 #include <unistd.h>
 
 #include "fchan.h"
@@ -76,6 +77,15 @@ thread_delay_s(int s)
     pthread_mutex_lock(&mtx);
     pthread_cond_timedwait(&cv, &mtx, &then);
     pthread_mutex_unlock(&mtx);
+}
+
+static void
+duplex_unit_signals()
+{
+    sigset_t mask, newmask;
+    sigemptyset(&newmask);
+    sigaddset(&newmask, SIGPIPE);
+    pthread_sigmask(SIG_SETMASK, &newmask, &mask);
 }
 
 extern void bchan_prog_1(struct svc_req *, register SVCXPRT *);
@@ -273,6 +283,8 @@ duplex_unit_clnt_create(const char *host, const int port)
     struct netbuf raddr;
     CLIENT *cl = NULL;
     int fd, code = 0;
+
+    duplex_unit_signals();
 
     fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd == -1)
