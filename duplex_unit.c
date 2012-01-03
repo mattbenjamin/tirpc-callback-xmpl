@@ -359,7 +359,6 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
                         (void*) cl_duplex_chan);
 
     sync_backchan_start();
-    thread_delay_s(1);
 
     return CUE_SUCCESS;
 
