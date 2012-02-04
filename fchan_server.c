@@ -123,7 +123,7 @@ read_1_svc_callback(read_args *args, struct svc_req *rq)
     bchan_res callback1_1_res[1];
 
     SVCXPRT *xprt = rq->rq_xprt;
-    static struct timeval timeout = { 25, 0 };
+    static struct timeval timeout = { /* 25 */ 120, 0 };
 
     /* convert xprt to a shared client channel */
     if (! duplex_clnt)

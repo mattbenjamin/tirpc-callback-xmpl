@@ -99,7 +99,7 @@ callback1_1_svc(bchan_msg *argp, bchan_res *result, struct svc_req *rqstp)
     printf("svc rcpt bchan_msg msg1: %s msg2: %s seqnum: %d\n",
 	   argp->msg1, argp->msg2, argp->seqnum);
 
-    result->result = 0;
+    result->result = 767;
     result->msg1 = strdup("bungee");
 
     return (retval);
@@ -132,13 +132,14 @@ duplex_unit_getreq(SVCXPRT *xprt)
   enum xprt_stat stat;
   sigset_t mask;
   bool_t destroyed;
+  int xp_fd = xprt->xp_fd;
 
   msg = alloc_rpc_msg();
   svc_set_rq_clntcred(&r, msg);
   destroyed = FALSE;
 
   /* serialize xprt */
-  clnt_vc_fd_lock(xprt, &mask /*, "duplex_unit_getreq" */);
+  vc_fd_lock(xp_fd, &mask /*, "duplex_unit_getreq" */);
 
   /* now receive msgs from xprt (support batch calls) */
   do
@@ -203,7 +204,7 @@ duplex_unit_getreq(SVCXPRT *xprt)
       /* XXX locking and destructive ops on xprt need to be reviewed */
       if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
 	{
-            clnt_vc_fd_unlock(xprt, &mask /* , "duplex_unit_getreq" */);
+            vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
 #if 0 /* the case is interesting, but we don't need to double free xprt */
             SVC_DESTROY (xprt);
 #endif
@@ -221,7 +222,7 @@ duplex_unit_getreq(SVCXPRT *xprt)
   free_rpc_msg(msg);
 
   if (! destroyed)
-      clnt_vc_fd_unlock(xprt, &mask);
+      vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
 }
 
 static void*
