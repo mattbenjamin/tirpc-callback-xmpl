@@ -45,8 +45,16 @@ void
 backchannel_rpc_server(CLIENT *cl)
 {
     SVCXPRT *xprt;
+    svc_init_params svc_params;
 
     printf("Starting RPC service\n");
+
+    /* New tirpc init function must (atm) be called to initialize the
+     * library. */
+    svc_params.flags = SVC_INIT_EPOLL; /* use EPOLL event mgmt */
+    svc_params.max_connections = 1024;
+    svc_params.max_events = 300; /* don't know good values for this */
+    svc_init(&svc_params);
 
     /* get a transport handle from our connected client
      * handle, cl is disposed for us */
@@ -64,7 +72,7 @@ backchannel_rpc_server(CLIENT *cl)
     }
 
     /* service the backchannel */
-    svc_run ();
+    svc_run();
 
     return;
 }
