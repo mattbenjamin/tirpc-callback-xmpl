@@ -46,9 +46,10 @@ fchan_callbackthread(void *arg)
     printf("fchan_callbackthread started\n");
 
     /* convert xprt to a dedicated client channel */
-    cl = clnt_dplx_create_from_svc(xprt,
-                                   BCHAN_PROG, BCHANV,
-                                   SVC_DPLX_CLNT_CREATE_DEDICATED);
+    cl = clnt_vc_create_from_svc(
+        xprt,
+        BCHAN_PROG, BCHANV,
+        SVC_VC_CREATE_FLAG_SPLX|SVC_VC_CREATE_FLAG_DISPOSE);
 
     callback1_1_arg.seqnum = 0;
 
@@ -127,10 +128,10 @@ read_1_svc_callback(read_args *args, struct svc_req *rq)
 
     /* convert xprt to a shared client channel */
     if (! duplex_clnt)
-        duplex_clnt = clnt_dplx_create_from_svc(
+        duplex_clnt = clnt_vc_create_from_svc(
             xprt,
             BCHAN_PROG, BCHANV,
-            SVC_DPLX_CLNT_CREATE_SHARED);
+            SVC_VC_CREATE_FLAG_DPLX);
 
     fprintf(stderr, "read_1_svc_callback before call\n");
 

@@ -245,10 +245,11 @@ backchannel_rpc_server(void *arg)
 
     /* get a transport handle from our connected client
      * handle, cl is disposed for us */
-    duplex_xprt = svc_dplx_create_from_clnt(cl,
-                                            0 /* sendsz */,
-                                            0 /* recvsz */,
-                                            SVC_DPLX_CLNT_CREATE_SHARED);
+    duplex_xprt = svc_vc_create_from_clnt(
+        cl,
+        0 /* sendsz */, 0 /* recvsz */,
+        SVC_VC_CREATE_FLAG_DPLX);
+
     if (!duplex_xprt) {
 	fprintf(stderr, "%s\n", "Create SVCXPRT from CLIENT failed");
     }
