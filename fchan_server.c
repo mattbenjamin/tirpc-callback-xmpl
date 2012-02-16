@@ -104,6 +104,8 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
     pthread_t tid;
     SVCXPRT *xprt = rqstp->rq_xprt;
 
+    printf("svc rcpt bind_conn_to_session1_1\n");
+
     /*
      * when we receive this call, we may convert the svc
      * transport handle to a client, and call on the backchannel
@@ -406,8 +408,10 @@ main (int argc, char **argv)
     }
 
     code = fchan_server_create(FCHAN_SVC_TCP);
-    svc_run ();
+    svc_run();
+
     fprintf (stderr, "%s", "svc_run returned");
+
     exit (1);
     /* NOTREACHED */
 }

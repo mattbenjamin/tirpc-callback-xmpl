@@ -7,6 +7,8 @@
 #include "fchan.h"
 #include "bchan.h"
 
+#include <rpc/svc_rqst.h>
+
 #define FREE_FCHAN_MSG_NONE     0x0000
 #define FREE_FCHAN_MSG_FREESELF 0x0001
 
@@ -41,11 +43,14 @@ thread_delay_s(int s)
 
 extern void bchan_prog_1(struct svc_req *, register SVCXPRT *);
 
+uint32_t bchan_id;
+
 void
 backchannel_rpc_server(CLIENT *cl)
 {
     SVCXPRT *xprt;
     svc_init_params svc_params;
+    int code = 0;
 
     printf("Starting RPC service\n");
 
@@ -71,8 +76,19 @@ backchannel_rpc_server(CLIENT *cl)
 	exit(1);
     }
 
+    /* we omitted SVC_VC_CREATE_FLAG_XPRT_REGISTER, so xprt has
+     * no event channel */
+    code = svc_rqst_new_evchan(&bchan_id,
+                               NULL /* u_data */,
+                               SVC_RQST_FLAG_CHAN_AFFINITY);
+
+    /* and bind xprt to it (it seems like the affinity flag belongs here,
+     * rather than above) */
+    code = svc_rqst_evchan_reg(bchan_id, xprt,
+                               SVC_RQST_FLAG_CHAN_AFFINITY);
+
     /* service the backchannel */
-    svc_run();
+    code = svc_rqst_thrd_run(bchan_id, SVC_RQST_FLAG_NONE);
 
     return;
 }
@@ -136,9 +152,6 @@ main (int argc, char *argv[])
         exit (1);
     }
 
-    /* start forward call loop using cl */
-    r = pthread_create(&tid, NULL, &fchan_call_loop, (void*) cl);
-
     /* create a dedicated connection for the backchan */
     cl_backchan = clnt_create (host, FCHAN_PROG, FCHANV, "tcp");
     if (cl_backchan == NULL) {
@@ -151,6 +164,9 @@ main (int argc, char *argv[])
     if (retval_1 != RPC_SUCCESS) {
         clnt_perror (cl_backchan, "call failed2");
     }
+
+    /* start forward call loop using cl */
+    r = pthread_create(&tid, NULL, &fchan_call_loop, (void*) cl);
 
     /* switch client to server endpoint and never return */
     backchannel_rpc_server(cl_backchan);
