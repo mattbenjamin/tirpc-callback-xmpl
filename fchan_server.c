@@ -49,7 +49,7 @@ fchan_callbackthread(void *arg)
     cl = clnt_vc_create_from_svc(
         xprt,
         BCHAN_PROG, BCHANV,
-        SVC_VC_CREATE_FLAG_SPLX|SVC_VC_CREATE_FLAG_DISPOSE);
+        SVC_VC_CREATE_FLAG_SPLX | SVC_VC_CREATE_FLAG_DISPOSE);
 
     callback1_1_arg.seqnum = 0;
 
@@ -133,7 +133,7 @@ read_1_svc_callback(read_args *args, struct svc_req *rq)
         duplex_clnt = clnt_vc_create_from_svc(
             xprt,
             BCHAN_PROG, BCHANV,
-            SVC_VC_CREATE_FLAG_DPLX);
+            SVC_VC_CREATE_FLAG_DPLX |SVC_VC_CREATE_FLAG_DISPOSE);
 
     fprintf(stderr, "read_1_svc_callback before call\n");
 
@@ -222,6 +222,10 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 	xdrproc_t _xdr_argument, _xdr_result;
 	bool_t (*local)(char *, void *, struct svc_req *);
 
+        /* XXXX valgrind warns these used uninitialized */
+        memset(&argument, 0, sizeof(argument));
+        memset(&result, 0, sizeof(result));
+
 	switch (rqstp->rq_proc) {
 	case NULLPROC:
 		(void) svc_sendreply (transp, (xdrproc_t) xdr_void, (char *)NULL);
@@ -307,7 +311,7 @@ fchan_server_create(unsigned int flags)
     svc_init_params svc_params;
     struct sockaddr_in saddr;
     struct t_bind bindaddr; /* XXX expected by svc_tli_create  */
-    int code, one, fd;
+    int code, one = 1, fd;
 
     printf("Starting RPC service\n");
 
