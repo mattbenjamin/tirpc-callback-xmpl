@@ -9,6 +9,16 @@
 
 #include <rpc/svc_rqst.h>
 
+#include <unistd.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <memory.h>
+
+#include <sys/signal.h>
+
+
 #define FREE_FCHAN_MSG_NONE     0x0000
 #define FREE_FCHAN_MSG_FREESELF 0x0001
 
@@ -43,7 +53,33 @@ thread_delay_s(int s)
 
 extern void bchan_prog_1(struct svc_req *, register SVCXPRT *);
 
-uint32_t bchan_id;
+static uint32_t bchan_id;
+static pthread_t fchan_tid;
+static int forechan_shutdown = FALSE;
+
+void fchan_sighand(int sig)
+{
+    int code = 0;
+
+    /* signal shutdown forechannel */
+    forechan_shutdown = TRUE;
+
+    /* signal shutdown backchannel */
+    code = svc_rqst_thrd_signal(bchan_id, SVC_RQST_SIGNAL_SHUTDOWN);   
+}
+
+static void
+fchan_signals()
+{
+    sigset_t mask, newmask;
+    sigemptyset(&newmask);
+    sigaddset(&newmask, SIGPIPE);
+    pthread_sigmask(SIG_SETMASK, &newmask, &mask);
+
+    /* trap shutdown */
+    signal(SIGINT, fchan_sighand);
+    signal(SIGTERM, fchan_sighand);
+}
 
 void
 backchannel_rpc_server(CLIENT *cl)
@@ -105,6 +141,10 @@ fchan_call_loop(void *arg)
 
     while (1) {
 
+        /* exit if signalled */
+        if (forechan_shutdown)
+            break;
+
 	sendmsg1_1_arg.seqnum++;
 	sendmsg1_1_arg.msg1 = strdup("hello");
 	sendmsg1_1_arg.msg2 = strdup("it's me again");
@@ -137,7 +177,6 @@ main (int argc, char *argv[])
     char *host;
     CLIENT *cl, *cl_backchan;
     enum clnt_stat retval_1;
-    pthread_t tid;
     int r;
     
     if (argc < 2) {
@@ -145,6 +184,8 @@ main (int argc, char *argv[])
         exit (1);
     }
     host = argv[1];
+
+    fchan_signals();
 
     cl = clnt_create (host, FCHAN_PROG, FCHANV, "tcp");
     if (cl == NULL) {
@@ -166,10 +207,13 @@ main (int argc, char *argv[])
     }
 
     /* start forward call loop using cl */
-    r = pthread_create(&tid, NULL, &fchan_call_loop, (void*) cl);
+    r = pthread_create(&fchan_tid, NULL, &fchan_call_loop, (void*) cl);
 
-    /* switch client to server endpoint and never return */
+    /* switch client to server endpoint */
     backchannel_rpc_server(cl_backchan);
+
+    r = pthread_join(fchan_tid, NULL);
+    printf("%s cleanup: pthread_join (fchan) result %d\n", argv[0], r);
 
     exit (0);
 }
