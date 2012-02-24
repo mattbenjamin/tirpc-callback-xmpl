@@ -77,12 +77,11 @@ fchan_signals()
     pthread_sigmask(SIG_SETMASK, &newmask, &mask);
 
     /* trap shutdown */
-    signal(SIGINT, fchan_sighand);
     signal(SIGTERM, fchan_sighand);
 }
 
 void
-backchannel_rpc_server(CLIENT *cl)
+backchan_rpc_server(CLIENT *cl)
 {
     SVCXPRT *xprt;
     svc_init_params svc_params;
@@ -125,6 +124,9 @@ backchannel_rpc_server(CLIENT *cl)
 
     /* service the backchannel */
     code = svc_rqst_thrd_run(bchan_id, SVC_RQST_FLAG_NONE);
+
+    /* reclaim resources */
+    svc_unregister(BCHAN_PROG, BCHANV); /* and free it? */
 
     return;
 }
@@ -187,14 +189,14 @@ main (int argc, char *argv[])
 
     fchan_signals();
 
-    cl = clnt_create (host, FCHAN_PROG, FCHANV, "tcp");
+    cl = clnt_create(host, FCHAN_PROG, FCHANV, "tcp");
     if (cl == NULL) {
         clnt_pcreateerror (host);
         exit (1);
     }
 
     /* create a dedicated connection for the backchan */
-    cl_backchan = clnt_create (host, FCHAN_PROG, FCHANV, "tcp");
+    cl_backchan = clnt_create(host, FCHAN_PROG, FCHANV, "tcp");
     if (cl_backchan == NULL) {
         clnt_pcreateerror (host);
         exit (1);
@@ -210,7 +212,7 @@ main (int argc, char *argv[])
     r = pthread_create(&fchan_tid, NULL, &fchan_call_loop, (void*) cl);
 
     /* switch client to server endpoint */
-    backchannel_rpc_server(cl_backchan);
+    backchan_rpc_server(cl_backchan);
 
     r = pthread_join(fchan_tid, NULL);
     printf("%s cleanup: pthread_join (fchan) result %d\n", argv[0], r);

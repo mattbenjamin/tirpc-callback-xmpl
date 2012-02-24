@@ -13,9 +13,15 @@
 #include <sys/signal.h>
 #include <netinet/in.h>
 
+#include <rpc/svc_rqst.h>
+
 #include "duplex_unit.h"
 
+static uint32_t fchan_id;
+static pthread_t fchan_cb_tid = (pthread_t) 0;
 static CLIENT *duplex_clnt = NULL;
+static int new_style_event_loop = FALSE;
+static int signal_shutdown = FALSE;
 
 void
 thread_delay_s(int s)
@@ -59,6 +65,9 @@ fchan_callbackthread(void *arg)
 	thread_delay_s(5);
 	printf("fchan_callbackthread wakeup\n");
 
+        if (signal_shutdown)
+            break;
+
 	callback1_1_arg.seqnum++;
 	callback1_1_arg.msg1 = strdup("holla");
 	callback1_1_arg.msg2 = strdup("back");
@@ -101,7 +110,6 @@ bool_t
 bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
 {
     int r;
-    pthread_t tid;
     SVCXPRT *xprt = rqstp->rq_xprt;
 
     printf("svc rcpt bind_conn_to_session1_1\n");
@@ -110,9 +118,8 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
      * when we receive this call, we may convert the svc
      * transport handle to a client, and call on the backchannel
      */
-    r = pthread_create(&tid, NULL, &fchan_callbackthread, (void*) xprt);
-    if (! r)
-        pthread_detach(tid);
+    r = pthread_create(&fchan_cb_tid, NULL, &fchan_callbackthread,
+                       (void*) xprt);
 
     return ( (r) ? FALSE : TRUE );
 }
@@ -296,6 +303,17 @@ int server_port;
 #define FCHAN_SVC_UDP 0x0001
 #define FCHAN_SVC_TCP 0x0002
 
+void fchan_sighand(int sig)
+{
+    int code = 0;
+
+    /* signal shutdown forechannel */
+    signal_shutdown = TRUE;
+
+    /* signal shutdown backchannel */
+    code = svc_rqst_thrd_signal(fchan_id, SVC_RQST_SIGNAL_SHUTDOWN);   
+}
+
 static void
 fchan_signals()
 {
@@ -303,10 +321,13 @@ fchan_signals()
     sigemptyset(&newmask);
     sigaddset(&newmask, SIGPIPE);
     pthread_sigmask(SIG_SETMASK, &newmask, &mask);
+
+    /* trap shutdown */
+    signal(SIGTERM, fchan_sighand);
 }
 
 static int
-fchan_server_create(unsigned int flags)
+forechan_rpc_server(unsigned int flags)
 {
     svc_init_params svc_params;
     struct sockaddr_in saddr;
@@ -388,6 +409,30 @@ fchan_server_create(unsigned int flags)
         exit(1);
     }
 
+    switch (new_style_event_loop) {
+    case TRUE:
+        code = svc_rqst_new_evchan(&fchan_id,
+                                   NULL /* u_data */,
+                                   SVC_RQST_FLAG_CHAN_AFFINITY);
+
+        /* bind xprt to channel--unregister it from the global event
+         * channel (if applicable) */
+        code = svc_rqst_evchan_reg(fchan_id, xprt,
+                                   SVC_RQST_FLAG_XPRT_UREG|
+                                   SVC_RQST_FLAG_CHAN_AFFINITY);
+
+        /* service the backchannel */
+        code = svc_rqst_thrd_run(fchan_id, SVC_RQST_FLAG_NONE);
+
+        break;
+    default:
+        svc_run();
+        break;
+    }
+
+    /* reclaim resources */
+    svc_unregister(FCHAN_PROG, FCHANV); /* and free it? */
+
     return (0);
 }
 
@@ -396,8 +441,12 @@ main (int argc, char **argv)
 {
     int opt, code;
 
-    while ((opt = getopt(argc, argv, "p:")) != -1) {
+    while ((opt = getopt(argc, argv, "np:")) != -1) {
         switch (opt) {
+        case 'n':
+            /* XXX use new threaded event loop */
+            new_style_event_loop = TRUE;
+            break;
         case 'p':
             server_port = atoi(optarg);
             break;
@@ -407,15 +456,19 @@ main (int argc, char **argv)
     }
 
     if (! server_port) {
-        printf ("usage: %s -p server_port\n", argv[0]);
+        printf ("usage: %s [-n] -p server_port\n", argv[0]);
         return (EXIT_FAILURE);
     }
 
-    code = fchan_server_create(FCHAN_SVC_TCP);
-    svc_run();
+    code = forechan_rpc_server(FCHAN_SVC_TCP);
+    printf("forechannel_rpc_server result %d\n", code);
 
-    fprintf (stderr, "%s", "svc_run returned");
+    /* XXXX bug, need to recall all unjoined tids */
+    if (fchan_cb_tid) {
+        code = pthread_join(fchan_cb_tid, NULL);
+        printf("%s cleanup: pthread_join (fchan) result %d\n", argv[0], code);
+    }
 
-    exit (1);
+    exit (0);
     /* NOTREACHED */
 }
