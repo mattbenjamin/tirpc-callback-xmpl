@@ -21,6 +21,7 @@ static uint32_t fchan_id;
 static pthread_t fchan_cb_tid = (pthread_t) 0;
 static CLIENT *duplex_clnt = NULL;
 static int new_style_event_loop = FALSE;
+static int override_getreq = FALSE;
 static int signal_shutdown = FALSE;
 
 void
@@ -38,6 +39,120 @@ thread_delay_s(int s)
     pthread_mutex_lock(&mtx);
     pthread_cond_timedwait(&cv, &mtx, &then);
     pthread_mutex_unlock(&mtx);
+}
+
+static inline void
+svc_set_rq_clntcred(struct svc_req *r, struct rpc_msg *msg)
+{
+    r->rq_clntcred = msg->rm_call.cb_cred.oa_base + MAX_AUTH_BYTES;
+}
+
+static bool_t
+fchan_server_getreq(SVCXPRT *xprt)
+{
+  struct svc_req r;
+  struct rpc_msg *msg;
+  enum xprt_stat stat;
+  sigset_t mask;
+  bool_t destroyed;
+  int xp_fd = xprt->xp_fd;
+
+  msg = alloc_rpc_msg();
+  svc_set_rq_clntcred(&r, msg);
+  destroyed = FALSE;
+
+  /* serialize xprt */
+  vc_fd_lock(xp_fd, &mask /*, "duplex_unit_getreq" */);
+
+  /* now receive msgs from xprt (support batch calls) */
+  do
+    {
+      if (SVC_RECV (xprt, msg))
+        {
+
+         /* if msg->rm_direction=REPLY, another thread is waiting
+          * to handle it */
+
+            /* the goal is not force a control transfer in the common
+             * case.  the likelihood can be reduced by updating the
+             * epoll registration of xprt.xp_fd between around calls
+             * and also around svc callouts */
+
+            if (msg->rm_direction == REPLY)
+                abort();
+
+	  /* now find the exported program and call it */
+          svc_vers_range_t vrange;
+          svc_lookup_result_t lkp_res;
+          svc_rec_t *svc_rec;
+	  enum auth_stat why;
+
+	  r.rq_xprt = xprt;
+	  r.rq_prog = msg->rm_call.cb_prog;
+	  r.rq_vers = msg->rm_call.cb_vers;
+	  r.rq_proc = msg->rm_call.cb_proc;
+	  r.rq_cred = msg->rm_call.cb_cred;
+
+	  /* first authenticate the message */
+	  if ((why = _authenticate (&r, msg)) != AUTH_OK)
+	    {
+	      svcerr_auth (xprt, why);
+	      goto call_done;
+	    }
+
+          lkp_res = svc_lookup(&svc_rec, &vrange, r.rq_prog, r.rq_vers,
+                               NULL, 0);
+          switch (lkp_res) {
+          case SVC_LKP_SUCCESS:
+              (*svc_rec->sc_dispatch) (&r, xprt);
+              goto call_done;
+              break;
+          SVC_LKP_VERS_NOTFOUND:
+              svcerr_progvers (xprt, vrange.lowvers, vrange.highvers);
+          default:
+              svcerr_noprog (xprt);
+              break;
+          }
+        } /* SVC_RECV again? probably want to try a non-blocking
+           * recv or MSG_PEEK */
+
+      /*
+       * Check if the xprt has been disconnected in a
+       * recursive call in the service dispatch routine.
+       * If so, then break.
+       */
+      if (!svc_validate_xprt_list(xprt))
+          break;
+
+    call_done:
+      /* XXX locking and destructive ops on xprt need to be reviewed */
+      if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
+	{
+            /* XXX the xp_destroy methods call the new svc_rqst_xprt_unregister
+             * routine, so there shouldn't be internal references to xprt.  The
+             * API client could also override this routine.  Still, there may
+             * be a motivation for adding a lifecycle callback, since the API
+             * client can get a new-xprt callback, and could have kept the
+             * address (and should now be notified we are disposing it). */
+            __warnx("%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
+
+            vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
+            SVC_DESTROY (xprt);
+            destroyed = TRUE;
+            break;
+	}
+    else if ((xprt->xp_auth != NULL) &&
+	     (xprt->xp_auth->svc_ah_private == NULL))
+	{
+            xprt->xp_auth = NULL;
+	}
+    }
+  while (stat == XPRT_MOREREQS);
+
+  free_rpc_msg(msg);
+
+  if (! destroyed)
+      vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
 }
 
 static void *
@@ -391,6 +506,9 @@ forechan_rpc_server(unsigned int flags)
             perror("error svc_fd_create failed");
             exit(1);
         }
+
+        if (override_getreq)
+            code = SVC_CONTROL(xprt, SVCSET_XP_GETREQ, fchan_server_getreq);
         break;
     } /* switch */
 
@@ -441,10 +559,12 @@ main (int argc, char **argv)
 {
     int opt, code;
 
-    while ((opt = getopt(argc, argv, "np:")) != -1) {
+    while ((opt = getopt(argc, argv, "gnp:")) != -1) {
         switch (opt) {
+        case 'g':
+            override_getreq = TRUE;
+            break;
         case 'n':
-            /* XXX use new threaded event loop */
             new_style_event_loop = TRUE;
             break;
         case 'p':

@@ -123,7 +123,6 @@ svc_set_rq_clntcred(struct svc_req *r, struct rpc_msg *msg)
     r->rq_clntcred = msg->rm_call.cb_cred.oa_base + MAX_AUTH_BYTES;
 }
 
-
 static bool_t
 duplex_unit_getreq(SVCXPRT *xprt)
 {
@@ -200,6 +199,7 @@ duplex_unit_getreq(SVCXPRT *xprt)
        */
       if (!svc_validate_xprt_list(xprt))
           break;
+
     call_done:
       /* XXX locking and destructive ops on xprt need to be reviewed */
       if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
