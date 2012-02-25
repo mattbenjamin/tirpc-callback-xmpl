@@ -172,6 +172,11 @@ fchan_callbackthread(void *arg)
         BCHAN_PROG, BCHANV,
         SVC_VC_CREATE_FLAG_SPLX | SVC_VC_CREATE_FLAG_DISPOSE);
 
+    if (! cl) {
+        printf("%s: clnt_vc_create_from_svc failed\n");
+        goto out;
+    }
+
     callback1_1_arg.seqnum = 0;
 
     while (1) {
@@ -201,6 +206,9 @@ fchan_callbackthread(void *arg)
 	printf("result: msg1: %s msg2: %s\n", result_1.msg1);
 
     }
+
+    /* reclaim resources */
+    CLNT_DESTROY(cl);
 
 out:
     return;
@@ -548,8 +556,17 @@ forechan_rpc_server(unsigned int flags)
         break;
     }
 
-    /* reclaim resources */
+    /* delete event channel, unregisters all xprts */
+    code = svc_rqst_delete_evchan(fchan_id, SVC_RQST_FLAG_NONE);
+    if (code)
+        printf("%s: svc_rqst_delete_evchan (%d) returned %d\n",
+               __func__, fchan_id, code);
+
+    /* unbind and clean up svc database */
     svc_unregister(FCHAN_PROG, FCHANV); /* and free it? */
+
+    /* dispose xprt */
+    SVC_DESTROY(xprt);
 
     return (0);
 }
