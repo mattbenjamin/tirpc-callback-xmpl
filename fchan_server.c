@@ -204,7 +204,7 @@ fchan_callbackthread(void *arg)
 	}
 
 	printf("result: msg1: %s msg2: %s\n", result_1.msg1);
-
+        free(result_1.msg1);
     }
 
 reclaim:
