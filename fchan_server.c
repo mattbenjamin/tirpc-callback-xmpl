@@ -178,6 +178,8 @@ fchan_callbackthread(void *arg)
     }
 
     callback1_1_arg.seqnum = 0;
+    callback1_1_arg.msg1 = strdup("holla");
+    callback1_1_arg.msg2 = strdup("back");
 
     while (1) {
 
@@ -189,8 +191,6 @@ fchan_callbackthread(void *arg)
             break;
 
 	callback1_1_arg.seqnum++;
-	callback1_1_arg.msg1 = strdup("holla");
-	callback1_1_arg.msg2 = strdup("back");
 	
 	/* XDR's encode and decode routines will only
 	 * allocate memory if the relevant destination pointer
@@ -200,15 +200,19 @@ fchan_callbackthread(void *arg)
 	retval_1 = callback1_1(&callback1_1_arg, &result_1, cl);
 	if (retval_1 != RPC_SUCCESS) {
 	    printf("callback failed--client may be gone, thread return\n");
-            goto out;
+            goto reclaim;
 	}
 
 	printf("result: msg1: %s msg2: %s\n", result_1.msg1);
 
     }
 
+reclaim:
+    free(callback1_1_arg.msg1);
+    free(callback1_1_arg.msg2);
+
     /* reclaim resources */
-    CLNT_DESTROY(cl);
+    clnt_vc_destroy(cl);
 
 out:
     return;
@@ -593,7 +597,7 @@ main (int argc, char **argv)
     }
 
     if (! server_port) {
-        printf ("usage: %s [-n] -p server_port\n", argv[0]);
+        printf ("usage: %s [-n -g] -p server_port\n", argv[0]);
         return (EXIT_FAILURE);
     }
 
@@ -605,6 +609,8 @@ main (int argc, char **argv)
         code = pthread_join(fchan_cb_tid, NULL);
         printf("%s cleanup: pthread_join (fchan) result %d\n", argv[0], code);
     }
+
+    (void) svc_shutdown(SVC_SHUTDOWN_FLAG_NONE);
 
     exit (0);
     /* NOTREACHED */
