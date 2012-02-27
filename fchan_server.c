@@ -12,17 +12,59 @@
 #include <sys/socket.h>
 #include <sys/signal.h>
 #include <netinet/in.h>
+#include <assert.h>
 
 #include <rpc/svc_rqst.h>
 
 #include "duplex_unit.h"
 
 static uint32_t fchan_id;
-static pthread_t fchan_cb_tid = (pthread_t) 0;
 static CLIENT *duplex_clnt = NULL;
 static int new_style_event_loop = FALSE;
 static int override_getreq = FALSE;
 static int signal_shutdown = FALSE;
+
+/* we want the main thread to be the last to exit on shutdown. */
+struct shutdown_semaphore {
+    int ctr;
+    pthread_mutex_t mtx;
+    pthread_cond_t cv;
+};
+
+struct shutdown_semaphore shutdown_sem = 
+{ 0,
+  PTHREAD_MUTEX_INITIALIZER, 
+  PTHREAD_COND_INITIALIZER
+};
+
+static inline void
+inc_shutdown_sem()
+{
+    pthread_mutex_lock(&shutdown_sem.mtx);
+    ++(shutdown_sem.ctr);
+    pthread_mutex_unlock(&shutdown_sem.mtx);
+}
+
+static inline void
+dec_shutdown_sem()
+{
+    pthread_mutex_lock(&shutdown_sem.mtx);
+    --(shutdown_sem.ctr);
+    assert(shutdown_sem.ctr >= 0);
+    pthread_mutex_unlock(&shutdown_sem.mtx);
+}
+
+static inline void
+barrier_shutdown_sem()
+{
+    pthread_mutex_lock(&shutdown_sem.mtx);
+    while (shutdown_sem.ctr > 0) {
+        pthread_cond_wait(&shutdown_sem.cv, &shutdown_sem.mtx);
+    }
+    pthread_mutex_unlock(&shutdown_sem.mtx);
+}
+
+void svc_xprt_dump_xprts(const char *tag);
 
 void
 thread_delay_s(int s)
@@ -166,6 +208,10 @@ fchan_callbackthread(void *arg)
 
     printf("fchan_callbackthread started\n");
 
+    inc_shutdown_sem();
+
+    svc_xprt_dump_xprts("fchan_callbackthread before create"); /* XXXX debugging */
+
     /* convert xprt to a dedicated client channel */
     cl = clnt_vc_create_from_svc(
         xprt,
@@ -176,6 +222,8 @@ fchan_callbackthread(void *arg)
         printf("%s: clnt_vc_create_from_svc failed\n");
         goto out;
     }
+
+    svc_xprt_dump_xprts("fchan_callbackthread after create"); /* XXXX debugging */
 
     callback1_1_arg.seqnum = 0;
     callback1_1_arg.msg1 = strdup("holla");
@@ -208,6 +256,8 @@ fchan_callbackthread(void *arg)
     }
 
 reclaim:
+    svc_xprt_dump_xprts("fchan_callbackthread reclaim"); /* XXXX debugging */
+
     free(callback1_1_arg.msg1);
     free(callback1_1_arg.msg2);
 
@@ -215,8 +265,8 @@ reclaim:
     clnt_vc_destroy(cl);
 
 out:
+    dec_shutdown_sem();
     return;
-
 } /* fchan_callbackthread */
 
 bool_t
@@ -238,6 +288,7 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
 {
     int r;
     SVCXPRT *xprt = rqstp->rq_xprt;
+    pthread_t fchan_cb_tid = (pthread_t) 0;
 
     printf("svc rcpt bind_conn_to_session1_1\n");
 
@@ -247,6 +298,8 @@ bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
      */
     r = pthread_create(&fchan_cb_tid, NULL, &fchan_callbackthread,
                        (void*) xprt);
+
+    pthread_detach(fchan_cb_tid);
 
     return ( (r) ? FALSE : TRUE );
 }
@@ -604,11 +657,7 @@ main (int argc, char **argv)
     code = forechan_rpc_server(FCHAN_SVC_TCP);
     printf("forechannel_rpc_server result %d\n", code);
 
-    /* XXXX bug, need to recall all unjoined tids */
-    if (fchan_cb_tid) {
-        code = pthread_join(fchan_cb_tid, NULL);
-        printf("%s cleanup: pthread_join (fchan) result %d\n", argv[0], code);
-    }
+    barrier_shutdown_sem();
 
     (void) svc_shutdown(SVC_SHUTDOWN_FLAG_NONE);
 
