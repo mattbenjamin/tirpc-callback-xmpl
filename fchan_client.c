@@ -43,7 +43,7 @@ thread_delay_s(int s)
     pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 
     now = time(0);
-    then.tv_sec = now + 5;
+    then.tv_sec = now + s;
     then.tv_nsec = 0;
     
     pthread_mutex_lock(&mtx);
