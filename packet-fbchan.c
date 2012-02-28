@@ -1,6 +1,6 @@
 /* packet-fbchan.c
- * Routines for PROTONAME dissection
- * Copyright 201x, YOUR_NAME <YOUR_EMAIL_ADDRESS>
+ * Routines for fbchan (Duplex ONC RPC Example)  dissection
+ * Copyright 2012, Linux Box Corporation.
  *
  * $Id$
  *
