@@ -15,6 +15,7 @@
 #include <assert.h>
 
 #include <rpc/svc_rqst.h>
+#include  <rpc/svc_dplx.h>
 
 #include "duplex_unit.h"
 
@@ -97,14 +98,13 @@ fchan_server_getreq(SVCXPRT *xprt)
   enum xprt_stat stat;
   sigset_t mask;
   bool_t destroyed;
-  int xp_fd = xprt->xp_fd;
 
   msg = alloc_rpc_msg();
   svc_set_rq_clntcred(&r, msg);
   destroyed = FALSE;
 
   /* serialize xprt */
-  vc_fd_lock(xp_fd, &mask /*, "duplex_unit_getreq" */);
+  svc_dplx_lock_x(xprt, &mask /*, "duplex_unit_getreq" */);
 
   /* now receive msgs from xprt (support batch calls) */
   do
@@ -178,7 +178,7 @@ fchan_server_getreq(SVCXPRT *xprt)
              * address (and should now be notified we are disposing it). */
             __warnx("%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
 
-            vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
+            svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
             SVC_DESTROY (xprt);
             destroyed = TRUE;
             break;
@@ -194,7 +194,7 @@ fchan_server_getreq(SVCXPRT *xprt)
   free_rpc_msg(msg);
 
   if (! destroyed)
-      vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
+      svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
 }
 
 static void *
