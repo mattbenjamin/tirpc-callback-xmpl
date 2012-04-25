@@ -180,7 +180,7 @@ fchan_call_loop(void *arg)
 	    clnt_perror (cl, "call failed");
 	}
 
-	printf("result: msg1: %s msg2: %s\n", result_1.msg1);
+	printf("result: msg1: %s\n", result_1.msg1);
 
 	free_fchan_msg(&sendmsg1_1_arg, FREE_FCHAN_MSG_NONE);
 

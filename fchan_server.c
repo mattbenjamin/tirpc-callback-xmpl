@@ -40,7 +40,7 @@
 #include <assert.h>
 
 #include <rpc/svc_rqst.h>
-#include  <rpc/svc_dplx.h>
+#include <rpc/svc_dplx.h>
 
 #include "duplex_unit.h"
 
@@ -276,7 +276,7 @@ fchan_callbackthread(void *arg)
             goto reclaim;
 	}
 
-	printf("result: msg1: %s msg2: %s\n", result_1.msg1);
+	printf("result: msg1: %s\n", result_1.msg1);
         free(result_1.msg1);
     }
 
