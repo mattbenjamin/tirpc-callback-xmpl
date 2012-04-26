@@ -184,8 +184,8 @@ fchan_call_loop(void *arg)
 
 	free_fchan_msg(&sendmsg1_1_arg, FREE_FCHAN_MSG_NONE);
 
-	/* delay 2s (wont appear to be lockstep) */
-	thread_delay_s(2);
+	/* delay 1s (wont appear to be lockstep) */
+	thread_delay_s(1);
     }
 
     clnt_destroy (cl);

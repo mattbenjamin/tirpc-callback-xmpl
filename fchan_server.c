@@ -257,7 +257,7 @@ fchan_callbackthread(void *arg)
     while (1) {
 
 	/* arrange to delay every 5s */
-	thread_delay_s(5);
+	thread_delay_s(1);
 	printf("fchan_callbackthread wakeup\n");
 
         if (signal_shutdown)
