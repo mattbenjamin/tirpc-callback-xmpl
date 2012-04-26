@@ -132,21 +132,19 @@ fchan_server_getreq(SVCXPRT *xprt)
   svc_dplx_lock_x(xprt, &mask /*, "duplex_unit_getreq" */);
 
   /* now receive msgs from xprt (support batch calls) */
-  do
-    {
-      if (SVC_RECV (xprt, msg))
-        {
+  do {
+      if (SVC_RECV (xprt, msg)) {
 
-         /* if msg->rm_direction=REPLY, another thread is waiting
-          * to handle it */
+          /* if msg->rm_direction=REPLY, another thread is waiting
+           * to handle it */
 
-            /* the goal is not force a control transfer in the common
-             * case.  the likelihood can be reduced by updating the
-             * epoll registration of xprt.xp_fd between around calls
-             * and also around svc callouts */
+          /* the goal is not force a control transfer in the common
+           * case.  the likelihood can be reduced by updating the
+           * epoll registration of xprt.xp_fd between around calls
+           * and also around svc callouts */
 
-            if (msg->rm_direction == REPLY)
-                abort();
+          if (msg->rm_direction == REPLY)
+              abort();
 
 	  /* now find the exported program and call it */
           svc_vers_range_t vrange;
@@ -161,11 +159,10 @@ fchan_server_getreq(SVCXPRT *xprt)
 	  r.rq_cred = msg->rm_call.cb_cred;
 
 	  /* first authenticate the message */
-	  if ((why = _authenticate (&r, msg)) != AUTH_OK)
-	    {
+	  if ((why = _authenticate (&r, msg)) != AUTH_OK) {
 	      svcerr_auth (xprt, why);
 	      goto call_done;
-	    }
+          }
 
           lkp_res = svc_lookup(&svc_rec, &vrange, r.rq_prog, r.rq_vers,
                                NULL, 0);
@@ -180,41 +177,42 @@ fchan_server_getreq(SVCXPRT *xprt)
               svcerr_noprog (xprt);
               break;
           }
-        } /* SVC_RECV again? probably want to try a non-blocking
-           * recv or MSG_PEEK */
-
-      /*
-       * Check if the xprt has been disconnected in a
-       * recursive call in the service dispatch routine.
-       * If so, then break.
-       */
-      if (!svc_validate_xprt_list(xprt))
-          break;
+      } /* SVC_RECV again? probably want to try a non-blocking
+         * recv or MSG_PEEK */
 
     call_done:
       /* XXX locking and destructive ops on xprt need to be reviewed */
-      if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
-	{
-            /* XXX the xp_destroy methods call the new svc_rqst_xprt_unregister
-             * routine, so there shouldn't be internal references to xprt.  The
-             * API client could also override this routine.  Still, there may
-             * be a motivation for adding a lifecycle callback, since the API
-             * client can get a new-xprt callback, and could have kept the
-             * address (and should now be notified we are disposing it). */
-            __warnx("%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
+      if ((stat = SVC_STAT (xprt)) == XPRT_DIED) {
+          /* XXX the xp_destroy methods call the new svc_rqst_xprt_unregister
+           * routine, so there shouldn't be internal references to xprt.  The
+           * API client could also override this routine.  Still, there may
+           * be a motivation for adding a lifecycle callback, since the API
+           * client can get a new-xprt callback, and could have kept the
+           * address (and should now be notified we are disposing it). */
+          __warnx("%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
 
-            svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
-            SVC_DESTROY (xprt);
-            destroyed = TRUE;
-            break;
-	}
-    else if ((xprt->xp_auth != NULL) &&
-	     (xprt->xp_auth->svc_ah_private == NULL))
-	{
-            xprt->xp_auth = NULL;
-	}
-    }
-  while (stat == XPRT_MOREREQS);
+          svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
+          SVC_DESTROY (xprt);
+          destroyed = TRUE;
+          break;
+      } else {
+
+          /* XXX check */
+          if ((xprt->xp_auth != NULL) &&
+              (xprt->xp_auth->svc_ah_private == NULL)) {
+              xprt->xp_auth = NULL;
+          }
+
+          /*
+           * Check if the xprt has been disconnected in a
+           * recursive call in the service dispatch routine.
+           * If so, then break.
+           */
+          if (!svc_validate_xprt_list(xprt))
+              break;
+      }
+
+  } while (stat == XPRT_MOREREQS);
 
   free_rpc_msg(msg);
 

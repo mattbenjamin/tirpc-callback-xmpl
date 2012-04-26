@@ -292,7 +292,7 @@ backchannel_rpc_server(void *arg)
     post_backchan_start();
 
     /* service the backchannel */
-    svc_run ();
+    svc_run();
 
     /* signalled */
     svc_unregister(BCHAN_PROG, BCHANV); /* and free it? */

@@ -84,7 +84,7 @@ void fchan_sighand(int sig)
     forechan_shutdown = TRUE;
 
     /* signal shutdown backchannel */
-    code = svc_rqst_thrd_signal(bchan_id, SVC_RQST_SIGNAL_SHUTDOWN);   
+    code = svc_rqst_thrd_signal(bchan_id, SVC_RQST_SIGNAL_SHUTDOWN);
 }
 
 static void
@@ -130,11 +130,11 @@ backchan_rpc_server(CLIENT *cl)
 	exit(1);
     }
 
-    /* we omitted SVC_VC_CREATE_FLAG_XPRT_REGISTER, so xprt has
-     * no event channel */
+    /* Use SVC_VC_CREATE_FLAG_XPRT_NOREG, so xprt has no event channel */
     code = svc_rqst_new_evchan(&bchan_id,
                                NULL /* u_data */,
-                               SVC_RQST_FLAG_CHAN_AFFINITY);
+                               (SVC_VC_CREATE_FLAG_XPRT_NOREG |
+                                SVC_RQST_FLAG_CHAN_AFFINITY));
 
     /* and bind xprt to it (it seems like the affinity flag belongs here,
      * rather than above) */
