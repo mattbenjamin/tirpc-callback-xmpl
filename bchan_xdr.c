@@ -4,6 +4,7 @@
  */
 
 #include "bchan.h"
+#include <rpc/xdr_inline.h>
 
 bool_t
 xdr_bchan_msg (XDR *xdrs, bchan_msg *objp)
