@@ -279,7 +279,7 @@ fchan_callbackthread(void *arg)
     }
 
 reclaim:
-    svc_xprt_dump_xprts("fchan_callbackthread reclaim"); /* XXXX debugging */
+    //svc_xprt_dump_xprts("fchan_callbackthread reclaim"); /* XXXX debugging */
 
     free(callback1_1_arg.msg1);
     free(callback1_1_arg.msg2);
