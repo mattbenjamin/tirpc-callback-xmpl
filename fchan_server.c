@@ -189,7 +189,8 @@ fchan_server_getreq(SVCXPRT *xprt)
            * be a motivation for adding a lifecycle callback, since the API
            * client can get a new-xprt callback, and could have kept the
            * address (and should now be notified we are disposing it). */
-          __warnx("%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
+          __warnx(TIRPC_DEBUG_FLAG_SVC,
+                  "%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
 
           svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
           SVC_DESTROY (xprt);
