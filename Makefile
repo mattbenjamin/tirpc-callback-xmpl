@@ -6,9 +6,11 @@
 CLIENT = fchan_client
 SERVER = fchan_server
 DUPLEX_UNIT = duplex_unit
+BLAST = fchan_blast
 
 SOURCES_UNIT.c = duplex_unit.c fchan_xdr.c fchan_clnt.c bchan_xdr.c bchan_svc.c
 SOURCES_CLNT.c = fchan_client.c bchan_server.c
+SOURCES_BLAST.c = fchan_blast.c
 SOURCES_CLNT.h = 
 SOURCES_SVC.c = fchan_server.c
 SOURCES_SVC.h = 
@@ -18,12 +20,14 @@ SOURCES_MISC.c = unit_misc.c
 
 TARGETS_SVC.c = fchan_svc.c fchan_xdr.c bchan_xdr.c bchan_clnt.c
 TARGETS_CLNT.c = fchan_clnt.c fchan_xdr.c bchan_svc.c bchan_xdr.c
+TARGETS_BLAST.c = fchan_clnt.c fchan_xdr.c
 TARGETS = fchan.h fchan_xdr.c fchan_clnt.c fchan_svc.c
 
 OBJECTS_CLNT = $(SOURCES_CLNT.c:%.c=%.o) $(TARGETS_CLNT.c:%.c=%.o)
 OBJECTS_SVC = $(SOURCES_SVC.c:%.c=%.o) $(TARGETS_SVC.c:%.c=%.o)
 OBJECTS_UNIT = $(SOURCES_UNIT.c:%.c=%.o) $(TARGETS_UNIT.c:%.c=%.o)
 OBJECTS_MISC = $(SOURCES_MISC.c:%.c=%.o) $(TARGETS_MISC.c:%.c=%.o)
+OBJECTS_BLAST = $(SOURCES_BLAST.c:%.c=%.o) $(TARGETS_BLAST.c:%.c=%.o)
 
 # Compiler flags 
 CUNIT=/opt/CUnit
@@ -38,7 +42,7 @@ RPCGENFLAGS = -C -M
 
 # Targets 
 
-all : $(CLIENT) $(SERVER) $(DUPLEX_UNIT)
+all : $(CLIENT) $(SERVER) $(DUPLEX_UNIT) $(BLAST)
 
 $(TARGETS) : $(SOURCES.x) $(SOURCES2.x)
 
@@ -57,6 +61,9 @@ $(OBJECTS_MISC) : $(SOURCES_MISC.c) $(SOURCES_MISC.h) $(TARGETS_MISC.c)
 
 $(CLIENT) : $(OBJECTS_CLNT) $(OBJECTS_MISC)
 	$(LINK.c) -o $(CLIENT) $(OBJECTS_CLNT) $(OBJECTS_MISC) $(LDFLAGS) 
+
+$(BLAST) : $(OBJECTS_BLAST) $(OBJECTS_MISC)
+	$(LINK.c) -o $(BLAST) $(OBJECTS_BLAST) $(OBJECTS_MISC) $(LDFLAGS) 
 
 $(SERVER) : $(OBJECTS_SVC) $(OBJECTS_MISC)
 	$(LINK.c) -o $(SERVER) $(OBJECTS_SVC) $(OBJECTS_MISC) $(LDFLAGS)
