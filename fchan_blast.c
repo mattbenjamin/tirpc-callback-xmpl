@@ -64,6 +64,10 @@ free_fchan_res(fchan_res *res, unsigned int flags)
     return;
 }
 
+#define VERB_1 0x0001 /* basic prints */
+#define VERB_2 0x0002 /* timing */
+
+static int verbose = 0;
 static int n_threads = 1;
 static char *server_host = NULL;
 static struct timeval timeout, default_timeout = { 120, 0 };
@@ -118,6 +122,9 @@ fchan_create_client(void)
     return (cl);
 }
 
+
+#define COMPUTE_TIME(x) ((verbose & VERB_2) && (((x) % 1000) == 0))
+
 static void*
 fchan_call_thread(void *arg)
 {
@@ -126,6 +133,7 @@ fchan_call_thread(void *arg)
     fchan_msg sendmsg1_1_arg;
     enum clnt_stat retval_1;
     CLIENT *cl = NULL;
+    time_t now = 0;
 
     sendmsg1_1_arg.seqnum = 0;
     sendmsg1_1_arg.msg1 = strdup("hello");
@@ -146,6 +154,10 @@ fchan_call_thread(void *arg)
         }
 
 	sendmsg1_1_arg.seqnum++;
+
+        if (COMPUTE_TIME(sendmsg1_1_arg.seqnum)) {
+            now = time(NULL);
+        }
 	
 	/* XDR's encode and decode routines will only
 	 * allocate memory if the relevant destination pointer
@@ -155,9 +167,16 @@ fchan_call_thread(void *arg)
 	retval_1 = sendmsg1_1(&sendmsg1_1_arg, &result_1, cl);
 	if (retval_1 != RPC_SUCCESS) {
 	    clnt_perror (cl, "call failed");
+            clnt_destroy(cl);
+            cl = NULL;
 	}
 
-	printf("result: msg1: %s\n", result_1.msg1);
+	if (verbose & VERB_1)
+            printf("result: msg1: %s seqnum: %d time: %d\n",
+                       result_1.msg1,
+                       sendmsg1_1_arg.seqnum,
+                       (COMPUTE_TIME(sendmsg1_1_arg.seqnum)) ? now : 0);
+
 	free_fchan_res(&result_1, FREE_FCHAN_MSG_NONE);
 
         if (always_destroy_client) {
@@ -176,7 +195,7 @@ main (int argc, char *argv[])
 {
     int opt, r, ix;
 
-    while ((opt = getopt(argc, argv, "h:t:n:d")) != -1) {
+    while ((opt = getopt(argc, argv, "h:t:n:dv:")) != -1) {
         switch (opt) {
         case 'h':
             server_host = optarg;
@@ -189,6 +208,9 @@ main (int argc, char *argv[])
             break;
         case 'd':
             always_destroy_client = TRUE;
+            break;
+        case 'v':
+            verbose = atoi(optarg);
             break;
         default:
             break;
