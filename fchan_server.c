@@ -285,7 +285,7 @@ reclaim:
     free(callback1_1_arg.msg2);
 
     /* reclaim resources */
-    clnt_vc_destroy(cl);
+    CLNT_DESTROY(cl);
 
 out:
     dec_shutdown_sem();
