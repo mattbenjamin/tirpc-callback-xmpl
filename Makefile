@@ -27,12 +27,12 @@ OBJECTS_MISC = $(SOURCES_MISC.c:%.c=%.o) $(TARGETS_MISC.c:%.c=%.o)
 
 # Compiler flags 
 CUNIT=/opt/CUnit
-TIRPC = /home/matt/dev/nfs/really-new-rpc/libtirpc-lbx
+TIRPC = /home/matt/nfs-ganesha/src/libtirpc
 
 CPPFLAGS += -D_REENTRANT
 CFLAGS += -g3 -O0 -fPIC -DPIC -I$(TIRPC)/tirpc/ -I$(CUNIT)/include \
 	-D_REENTRANT -DRPC_DUPLEX
-LDFLAGS += -L$(CUNIT)/lib $(TIRPC)/src/.libs/libtirpc.a \
+LDFLAGS += -L$(CUNIT)/lib $(TIRPC)/src/.libs/libntirpc.a \
 	-lnsl -lcunit -lpthread
 RPCGENFLAGS = -C -M 
 
