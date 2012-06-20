@@ -26,6 +26,8 @@
 #include <rpc/rpc.h>
 #include <pthread.h>
 
+static const uint32_t S_NSECS = 1000000000UL; /* nsecs in 1s */
+static const uint32_t MS_NSECS = 1000000UL; /* nsecs in 1ms */
 
 void
 thread_delay_ms(int ms)
@@ -35,9 +37,11 @@ thread_delay_ms(int ms)
     pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
     pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 
-    now = time(0);
-    then.tv_sec = now + 1000*ms;
-    then.tv_nsec = 0;
+    now = time(NULL);
+    uint64_t nsecs = (S_NSECS * now) + (MS_NSECS * ms);
+
+    then.tv_sec = nsecs / S_NSECS;
+    then.tv_nsec = nsecs % S_NSECS;
     
     pthread_mutex_lock(&mtx);
     pthread_cond_timedwait(&cv, &mtx, &then);

@@ -34,9 +34,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <memory.h>
-
 #include <sys/signal.h>
-
+#include "duplex_unit.h"
 
 #define FREE_FCHAN_MSG_NONE     0x0000
 #define FREE_FCHAN_MSG_FREESELF 0x0001
@@ -71,28 +70,14 @@ static int verbose = 0;
 static int n_threads = 1;
 static char *server_host = NULL;
 static struct timeval timeout, default_timeout = { 120, 0 };
+pthread_mutex_t ctr_mtx = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t n_processed = 0;
 
 static uint32_t bchan_id;
 static pthread_t* fchan_tid;
+pthread_mutex_t clnt_mtx = PTHREAD_MUTEX_INITIALIZER;
 static int forechan_shutdown = FALSE;
 static int always_destroy_client = FALSE;
-
-void
-thread_delay_s(int s)
-{
-    time_t now;
-    struct timespec then;
-    pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-    pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-
-    now = time(0);
-    then.tv_sec = now + s;
-    then.tv_nsec = 0;
-    
-    pthread_mutex_lock(&mtx);
-    pthread_cond_timedwait(&cv, &mtx, &then);
-    pthread_mutex_unlock(&mtx);
-}
 
 void fchan_sighand(int sig)
 {
@@ -118,12 +103,11 @@ static inline CLIENT*
 fchan_create_client(void)
 {
     CLIENT *cl;
+    pthread_mutex_lock(&clnt_mtx);
     cl = clnt_create(server_host, FCHAN_PROG, FCHANV, "tcp");
+    pthread_mutex_unlock(&clnt_mtx);
     return (cl);
 }
-
-
-#define COMPUTE_TIME(x) ((verbose & VERB_2) && (((x) % 1000) == 0))
 
 static void*
 fchan_call_thread(void *arg)
@@ -132,6 +116,7 @@ fchan_call_thread(void *arg)
     fchan_res result_1;
     fchan_msg sendmsg1_1_arg;
     enum clnt_stat retval_1;
+    uint64_t l_processed = 0;
     CLIENT *cl = NULL;
     time_t now = 0;
 
@@ -154,10 +139,6 @@ fchan_call_thread(void *arg)
         }
 
 	sendmsg1_1_arg.seqnum++;
-
-        if (COMPUTE_TIME(sendmsg1_1_arg.seqnum)) {
-            now = time(NULL);
-        }
 	
 	/* XDR's encode and decode routines will only
 	 * allocate memory if the relevant destination pointer
@@ -171,11 +152,12 @@ fchan_call_thread(void *arg)
             cl = NULL;
 	}
 
+        l_processed++;
+
 	if (verbose & VERB_1)
-            printf("result: msg1: %s seqnum: %d time: %d\n",
+            printf("result: msg1: %s seqnum: %d\n",
                        result_1.msg1,
-                       sendmsg1_1_arg.seqnum,
-                       (COMPUTE_TIME(sendmsg1_1_arg.seqnum)) ? now : 0);
+                       sendmsg1_1_arg.seqnum);
 
 	free_fchan_res(&result_1, FREE_FCHAN_MSG_NONE);
 
@@ -188,6 +170,10 @@ fchan_call_thread(void *arg)
 	thread_delay_s(1);
 #endif
     }
+
+    pthread_mutex_lock(&ctr_mtx);
+    n_processed += l_processed;
+    pthread_mutex_unlock(&ctr_mtx);
 }
 
 int
@@ -236,6 +222,10 @@ main (int argc, char *argv[])
         printf("%s cleanup: pthread_join (fchan) ix %d result %d\n",
                argv[0], ix, r);
     }
+
+    if (verbose & VERB_2)
+        printf("%s total requests processed: %ld\n",
+               argv[0], n_processed);
 
     exit (0);
 }

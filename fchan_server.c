@@ -31,6 +31,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <rpc/pmap_clnt.h>
 #include <string.h>
 #include <memory.h>
@@ -46,9 +47,10 @@
 
 static uint32_t fchan_id;
 static CLIENT *duplex_clnt = NULL;
-static int new_style_event_loop = FALSE;
-static int override_getreq = FALSE;
-static int signal_shutdown = FALSE;
+static bool new_style_event_loop = FALSE;
+static bool override_getreq = FALSE;
+static bool signal_shutdown = FALSE;
+static bool verbose = FALSE;
 
 /* we want the main thread to be the last to exit on shutdown. */
 struct shutdown_semaphore {
@@ -133,7 +135,7 @@ fchan_server_getreq(SVCXPRT *xprt)
 
   /* now receive msgs from xprt (support batch calls) */
   do {
-      if (SVC_RECV (xprt, msg)) {
+      if (SVC_RECV(xprt, msg)) {
 
           /* if msg->rm_direction=REPLY, another thread is waiting
            * to handle it */
@@ -159,8 +161,8 @@ fchan_server_getreq(SVCXPRT *xprt)
 	  r.rq_cred = msg->rm_call.cb_cred;
 
 	  /* first authenticate the message */
-	  if ((why = _authenticate (&r, msg)) != AUTH_OK) {
-	      svcerr_auth (xprt, why);
+	  if ((why = _authenticate(&r, msg)) != AUTH_OK) {
+	      svcerr_auth(xprt, why);
 	      goto call_done;
           }
 
@@ -172,9 +174,9 @@ fchan_server_getreq(SVCXPRT *xprt)
               goto call_done;
               break;
           SVC_LKP_VERS_NOTFOUND:
-              svcerr_progvers (xprt, vrange.lowvers, vrange.highvers);
+              svcerr_progvers(xprt, vrange.lowvers, vrange.highvers);
           default:
-              svcerr_noprog (xprt);
+              svcerr_noprog(xprt);
               break;
           }
       } /* SVC_RECV again? probably want to try a non-blocking
@@ -182,7 +184,7 @@ fchan_server_getreq(SVCXPRT *xprt)
 
     call_done:
       /* XXX locking and destructive ops on xprt need to be reviewed */
-      if ((stat = SVC_STAT (xprt)) == XPRT_DIED) {
+      if ((stat = SVC_STAT(xprt)) == XPRT_DIED) {
           /* XXX the xp_destroy methods call the new svc_rqst_xprt_unregister
            * routine, so there shouldn't be internal references to xprt.  The
            * API client could also override this routine.  Still, there may
@@ -193,7 +195,7 @@ fchan_server_getreq(SVCXPRT *xprt)
                   "%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
 
           svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
-          SVC_DESTROY (xprt);
+          SVC_DESTROY(xprt);
           destroyed = TRUE;
           break;
       } else {
@@ -257,7 +259,8 @@ fchan_callbackthread(void *arg)
 
 	/* arrange to delay every 5s */
 	thread_delay_s(1);
-	printf("fchan_callbackthread wakeup\n");
+	if (verbose)
+            printf("fchan_callbackthread wakeup\n");
 
         if (signal_shutdown)
             break;
@@ -286,7 +289,7 @@ reclaim:
     free(callback1_1_arg.msg2);
 
     /* reclaim resources */
-    CLNT_DESTROY(cl);
+    clnt_destroy(cl);
 
 out:
     dec_shutdown_sem();
@@ -298,8 +301,9 @@ sendmsg1_1_svc(fchan_msg *argp, fchan_res *result, struct svc_req *rqstp)
 {
     bool_t retval = TRUE;
 
-    printf("svc rcpt fchan_msg msg1: %s msg2: %s seqnum: %d\n",
-	   argp->msg1, argp->msg2, argp->seqnum);
+    if (verbose)
+        printf("svc rcpt fchan_msg msg1: %s msg2: %s seqnum: %d\n",
+               argp->msg1, argp->msg2, argp->seqnum);
 
     result->result = 0;
     result->msg1 = strdup("freebird");
@@ -547,7 +551,7 @@ forechan_rpc_server(unsigned int flags)
     svc_params.max_events = 300; /* don't know good values for this */
     svc_init(&svc_params);
 
-    pmap_unset (FCHAN_PROG, FCHANV);
+    pmap_unset(FCHAN_PROG, FCHANV);
 
     fchan_signals();
 
@@ -556,13 +560,13 @@ forechan_rpc_server(unsigned int flags)
         if (flags & FCHAN_SVC_UDP) {
             xprt = svcudp_create(RPC_ANYSOCK);
             if (xprt == NULL) {
-                fprintf (stderr, "%s", "cannot create udp service.");
+                fprintf(stderr, "%s", "cannot create udp service.");
                 exit(1);
             }
         }
 	xprt = svctcp_create(RPC_ANYSOCK, 0, 0);
 	if (xprt == NULL) {
-            fprintf (stderr, "%s", "cannot create tcp service.");
+            fprintf(stderr, "%s", "cannot create tcp service.");
             exit(1);
 	}
     default:
@@ -604,14 +608,14 @@ forechan_rpc_server(unsigned int flags)
     if (flags & FCHAN_SVC_UDP) {
         if (!svc_register(xprt, FCHAN_PROG, FCHANV, fchan_prog_1,
                           IPPROTO_UDP)) {
-            fprintf (stderr, "%s", "unable to register (FCHAN_PROG, FCHANV,"
+            fprintf(stderr, "%s", "unable to register (FCHAN_PROG, FCHANV,"
                      " udp).");
             exit(1);
         }
     }
     if (!svc_register(xprt, FCHAN_PROG, FCHANV, fchan_prog_1,
                       IPPROTO_TCP)) {
-        fprintf (stderr, "%s", "unable to register (FCHAN_PROG, FCHANV, "
+        fprintf(stderr, "%s", "unable to register (FCHAN_PROG, FCHANV, "
                  "tcp).");
         exit(1);
     }
@@ -657,8 +661,11 @@ main (int argc, char **argv)
 {
     int opt, code;
 
-    while ((opt = getopt(argc, argv, "gnp:")) != -1) {
+    while ((opt = getopt(argc, argv, "vgnp:")) != -1) {
         switch (opt) {
+        case 'v':
+            verbose = TRUE;
+            break;
         case 'g':
             override_getreq = TRUE;
             break;

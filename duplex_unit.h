@@ -28,4 +28,6 @@
 
 #define DUPLEX_UNIT_IMMED_CB 0x0001
 
+void thread_delay_ms(int ms);
+
 #endif /* DUPLEX_UNIT_H */
