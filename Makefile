@@ -8,11 +8,12 @@ SERVER = fchan_server
 DUPLEX_UNIT = duplex_unit
 BLAST = fchan_blast
 
-SOURCES_UNIT.c = duplex_unit.c fchan_xdr.c fchan_clnt.c bchan_xdr.c bchan_svc.c
-SOURCES_CLNT.c = fchan_client.c bchan_server.c
-SOURCES_BLAST.c = fchan_blast.c
+SOURCES_UNIT.c = duplex_unit.c fchan_xdr.c fchan_clnt.c bchan_xdr.c \
+	bchan_svc.c strlcpy.c
+SOURCES_CLNT.c = fchan_client.c bchan_server.c strlcpy.c
+SOURCES_BLAST.c = fchan_blast.c strlcpy.c
 SOURCES_CLNT.h = 
-SOURCES_SVC.c = fchan_server.c
+SOURCES_SVC.c = fchan_server.c strlcpy.c
 SOURCES_SVC.h = 
 SOURCES.x = fchan.x
 SOURCES2.x = bchan.x
@@ -37,7 +38,8 @@ CPPFLAGS += -D_REENTRANT
 CFLAGS += -g3 -O0 -fPIC -DPIC -I$(TIRPC)/tirpc/ -I$(CUNIT)/include \
 	-D_REENTRANT -DRPC_DUPLEX
 LDFLAGS += -L$(CUNIT)/lib $(TIRPC)/src/.libs/libntirpc.a \
-	-lnsl -lcunit -lpthread
+	-lcunit -lgssapi_krb5 -lkrb5 -lk5crypto -lcom_err -lpthread \
+	-lc -lrt -lgssglue
 RPCGENFLAGS = -C -M 
 
 # Targets 

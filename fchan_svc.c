@@ -17,7 +17,7 @@
 #endif
 
 static void
-fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
+fchan_prog_1(struct svc_req *req, register SVCXPRT *xprt)
 {
 	union {
 		fchan_msg sendmsg1_1_arg;
@@ -34,9 +34,9 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 	xdrproc_t _xdr_argument, _xdr_result;
 	bool_t (*local)(char *, void *, struct svc_req *);
 
-	switch (rqstp->rq_proc) {
+	switch (req->rq_proc) {
 	case NULLPROC:
-		(void) svc_sendreply (transp, (xdrproc_t) xdr_void, (char *)NULL);
+            (void) svc_sendreply(xprt, req, (xdrproc_t) xdr_void, (char *)NULL);
 		return;
 
 	case SENDMSG1:
@@ -64,24 +64,24 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 		break;
 
 	default:
-		svcerr_noproc (transp);
+            svcerr_noproc(xprt, req);
 		return;
 	}
 	memset ((char *)&argument, 0, sizeof (argument));
-	if (!svc_getargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
-		svcerr_decode (transp);
+	if (!svc_getargs (xprt, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
+            svcerr_decode(xprt, req);
 		return;
 	}
-	retval = (bool_t) (*local)((char *)&argument, (void *)&result, rqstp);
-	if (retval > 0 && !svc_sendreply(transp, (xdrproc_t) _xdr_result, (char *)&result)) {
-		svcerr_systemerr (transp);
+	retval = (bool_t) (*local)((char *)&argument, (void *)&result, req);
+	if (retval > 0 && !svc_sendreply(xprt, req, (xdrproc_t) _xdr_result, (char *)&result)) {
+            svcerr_systemerr(xprt, req);
 	}
-	if (!svc_freeargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
+	if (!svc_freeargs(xprt, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
 		fprintf (stderr, "%s", "unable to free arguments");
 		exit (1);
 	}
-	if (!fchan_prog_1_freeresult (transp, _xdr_result, (caddr_t) &result))
-		fprintf (stderr, "%s", "unable to free results");
+	if (!fchan_prog_1_freeresult(xprt, _xdr_result, (caddr_t) &result))
+		fprintf(stderr, "%s", "unable to free results");
 
 	return;
 }
@@ -90,26 +90,26 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 int
 main (int argc, char **argv)
 {
-	register SVCXPRT *transp;
+	register SVCXPRT *xprt;
 
 	pmap_unset (FCHAN_PROG, FCHANV);
 
-	transp = svcudp_create(RPC_ANYSOCK);
-	if (transp == NULL) {
+	xprt = svcudp_create(RPC_ANYSOCK);
+	if (xprt == NULL) {
 		fprintf (stderr, "%s", "cannot create udp service.");
 		exit(1);
 	}
-	if (!svc_register(transp, FCHAN_PROG, FCHANV, fchan_prog_1, IPPROTO_UDP)) {
+	if (!svc_register(xprt, FCHAN_PROG, FCHANV, fchan_prog_1, IPPROTO_UDP)) {
 		fprintf (stderr, "%s", "unable to register (FCHAN_PROG, FCHANV, udp).");
 		exit(1);
 	}
 
-	transp = svctcp_create(RPC_ANYSOCK, 0, 0);
-	if (transp == NULL) {
+	xprt = svctcp_create(RPC_ANYSOCK, 0, 0);
+	if (xprt == NULL) {
 		fprintf (stderr, "%s", "cannot create tcp service.");
 		exit(1);
 	}
-	if (!svc_register(transp, FCHAN_PROG, FCHANV, fchan_prog_1, IPPROTO_TCP)) {
+	if (!svc_register(xprt, FCHAN_PROG, FCHANV, fchan_prog_1, IPPROTO_TCP)) {
 		fprintf (stderr, "%s", "unable to register (FCHAN_PROG, FCHANV, tcp).");
 		exit(1);
 	}

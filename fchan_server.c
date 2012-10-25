@@ -41,7 +41,7 @@
 #include <assert.h>
 
 #include <rpc/svc_rqst.h>
-#include <rpc/svc_dplx.h>
+#include <rpc/rpc_dplx.h>
 
 #include "duplex_unit.h"
 
@@ -111,117 +111,133 @@ thread_delay_s(int s)
     pthread_mutex_unlock(&mtx);
 }
 
-static inline void
-svc_set_rq_clntcred(struct svc_req *r, struct rpc_msg *msg)
+#define DISP_SLOCK(x) do { \
+    if (! slocked) { \
+        rpc_dplx_slx((x)); \
+        slocked = TRUE; \
+      }\
+    } while (0);
+
+#define DISP_SUNLOCK(x) do { \
+    if (slocked) { \
+        rpc_dplx_sux((x)); \
+        slocked = FALSE; \
+      }\
+    } while (0);
+
+#define DISP_RLOCK(x) do { \
+    if (! rlocked) { \
+        rpc_dplx_rlx((x)); \
+        rlocked = TRUE; \
+      }\
+    } while (0);
+
+#define DISP_RUNLOCK(x) do { \
+    if (rlocked) { \
+        rpc_dplx_rux((x)); \
+        rlocked = FALSE; \
+      }\
+    } while (0);
+
+static struct svc_req *
+alloc_rpc_request(SVCXPRT *xprt)
 {
-    r->rq_clntcred = msg->rm_call.cb_cred.oa_base + MAX_AUTH_BYTES;
+    struct svc_req *req = malloc(sizeof(struct svc_req));
+    req->rq_xprt = xprt;
+    return (req);
+}
+
+static void
+free_rpc_request(struct svc_req *req)
+{
+    free(req);
 }
 
 static bool_t
 fchan_server_getreq(SVCXPRT *xprt)
 {
-  struct svc_req r;
-  struct rpc_msg *msg;
-  enum xprt_stat stat;
-  sigset_t mask;
-  bool_t destroyed;
+    struct svc_req *req;
+    bool destroyed = FALSE, recv_status;
+    bool rlocked = FALSE, slocked = FALSE;
+    enum xprt_stat stat;
 
-  msg = alloc_rpc_msg();
-  svc_set_rq_clntcred(&r, msg);
-  destroyed = FALSE;
+    req = alloc_rpc_request(xprt); /* ! NULL */
 
-  /* serialize xprt */
-  svc_dplx_lock_x(xprt, &mask /*, "duplex_unit_getreq" */);
+    /* serialize recv channel */
+    DISP_RLOCK(xprt);
 
-  /* now receive msgs from xprt (support batch calls) */
-  do {
-      if (SVC_RECV(xprt, msg)) {
+    /* now receive msgs from xprt (support batch calls) */
+    do {
+        if (SVC_RECV(xprt, req)) {
 
-          /* if msg->rm_direction=REPLY, another thread is waiting
-           * to handle it */
+            /* if msg->rm_direction=REPLY, another thread is waiting
+             * to handle it */
 
-          /* the goal is not force a control transfer in the common
-           * case.  the likelihood can be reduced by updating the
-           * epoll registration of xprt.xp_fd between around calls
-           * and also around svc callouts */
+            /* can't happen, SVC_RECV returns false in REPLY case */
+            if (req->rq_msg->rm_direction == REPLY)
+                abort();
 
-          if (msg->rm_direction == REPLY)
-              abort();
+            /* now find the exported program and call it */
+            svc_vers_range_t vrange;
+            svc_lookup_result_t lkp_res;
+            svc_rec_t *svc_rec;
+            enum auth_stat why;
 
-	  /* now find the exported program and call it */
-          svc_vers_range_t vrange;
-          svc_lookup_result_t lkp_res;
-          svc_rec_t *svc_rec;
-	  enum auth_stat why;
+            /* first authenticate the message */
+            if ((why = _authenticate(req, req->rq_msg)) != AUTH_OK) {
+                svcerr_auth(xprt, req, why);
+                goto call_done;
+            }
 
-	  r.rq_xprt = xprt;
-	  r.rq_prog = msg->rm_call.cb_prog;
-	  r.rq_vers = msg->rm_call.cb_vers;
-	  r.rq_proc = msg->rm_call.cb_proc;
-	  r.rq_cred = msg->rm_call.cb_cred;
-
-	  /* first authenticate the message */
-	  if ((why = _authenticate(&r, msg)) != AUTH_OK) {
-	      svcerr_auth(xprt, why);
-	      goto call_done;
-          }
-
-          lkp_res = svc_lookup(&svc_rec, &vrange, r.rq_prog, r.rq_vers,
-                               NULL, 0);
-          switch (lkp_res) {
-          case SVC_LKP_SUCCESS:
-              (*svc_rec->sc_dispatch) (&r, xprt);
-              goto call_done;
-              break;
-          SVC_LKP_VERS_NOTFOUND:
-              svcerr_progvers(xprt, vrange.lowvers, vrange.highvers);
-          default:
-              svcerr_noprog(xprt);
-              break;
-          }
-      } /* SVC_RECV again? probably want to try a non-blocking
-         * recv or MSG_PEEK */
+            lkp_res = svc_lookup(&svc_rec, &vrange, req->rq_prog, req->rq_vers,
+                                 NULL, 0);
+            switch (lkp_res) {
+            case SVC_LKP_SUCCESS:
+                (*svc_rec->sc_dispatch) (req, xprt);
+                goto call_done;
+                break;
+            SVC_LKP_VERS_NOTFOUND:
+                svcerr_progvers(xprt, req, vrange.lowvers, vrange.highvers);
+            default:
+                svcerr_noprog(xprt, req);
+                break;
+            }
+        } /* SVC_RECV again */
 
     call_done:
-      /* XXX locking and destructive ops on xprt need to be reviewed */
-      if ((stat = SVC_STAT(xprt)) == XPRT_DIED) {
-          /* XXX the xp_destroy methods call the new svc_rqst_xprt_unregister
-           * routine, so there shouldn't be internal references to xprt.  The
-           * API client could also override this routine.  Still, there may
-           * be a motivation for adding a lifecycle callback, since the API
-           * client can get a new-xprt callback, and could have kept the
-           * address (and should now be notified we are disposing it). */
-          __warnx(TIRPC_DEBUG_FLAG_SVC,
-                  "%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
+        /* XXX locking and destructive ops on xprt need to be reviewed */
+        if ((stat = SVC_STAT(xprt)) == XPRT_DIED) {
+            /* XXX the xp_destroy methods call the new svc_rqst_xprt_unregister
+             * routine, so there shouldn't be internal references to xprt.  The
+             * API client could also override this routine.  Still, there may
+             * be a motivation for adding a lifecycle callback, since the API
+             * client can get a new-xprt callback, and could have kept the
+             * address (and should now be notified we are disposing it). */
+            __warnx(TIRPC_DEBUG_FLAG_SVC,
+                    "%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
+            DISP_RUNLOCK(xprt);
+            SVC_DESTROY(xprt);
+            destroyed = TRUE;
+            break;
+        } else {
+            /*
+             * Check if the xprt has been disconnected in a
+             * recursive call in the service dispatch routine.
+             * If so, then break.
+             */
+            if (!svc_validate_xprt_list(xprt))
+                break;
+        }
 
-          svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
-          SVC_DESTROY(xprt);
-          destroyed = TRUE;
-          break;
-      } else {
+    } while (stat == XPRT_MOREREQS);
 
-          /* XXX check */
-          if ((xprt->xp_auth != NULL) &&
-              (xprt->xp_auth->svc_ah_private == NULL)) {
-              xprt->xp_auth = NULL;
-          }
+    free_rpc_request(req);
 
-          /*
-           * Check if the xprt has been disconnected in a
-           * recursive call in the service dispatch routine.
-           * If so, then break.
-           */
-          if (!svc_validate_xprt_list(xprt))
-              break;
-      }
-
-  } while (stat == XPRT_MOREREQS);
-
-  free_rpc_msg(msg);
-
-  if (! destroyed)
-      svc_dplx_unlock_x(xprt, &mask /*, "duplex_unit_getreq" */);
+    if (! destroyed)
+        DISP_RUNLOCK(xprt);
 }
+
+AUTH *auth;
 
 static void *
 fchan_callbackthread(void *arg)
@@ -239,10 +255,10 @@ fchan_callbackthread(void *arg)
     svc_xprt_dump_xprts("fchan_callbackthread before create"); /* XXXX debugging */
 
     /* convert xprt to a dedicated client channel */
-    cl = clnt_vc_create_from_svc(
+    cl = clnt_vc_create_svc(
         xprt,
         BCHAN_PROG, BCHANV,
-        SVC_VC_CREATE_FLAG_SPLX | SVC_VC_CREATE_FLAG_DISPOSE);
+        SVC_VC_CREATE_ONEWAY | SVC_VC_CREATE_DISPOSE);
 
     if (! cl) {
         printf("%s: clnt_vc_create_from_svc failed\n");
@@ -297,7 +313,7 @@ out:
 } /* fchan_callbackthread */
 
 bool_t
-sendmsg1_1_svc(fchan_msg *argp, fchan_res *result, struct svc_req *rqstp)
+sendmsg1_1_svc(fchan_msg *argp, fchan_res *result, struct svc_req *req)
 {
     bool_t retval = TRUE;
 
@@ -312,17 +328,17 @@ sendmsg1_1_svc(fchan_msg *argp, fchan_res *result, struct svc_req *rqstp)
 }
 
 bool_t
-bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *rqstp)
+bind_conn_to_session1_1_svc(void *argp, int *result, struct svc_req *req)
 {
     int r;
-    SVCXPRT *xprt = rqstp->rq_xprt;
+    SVCXPRT *xprt = req->rq_xprt;
     pthread_t fchan_cb_tid = (pthread_t) 0;
 
     printf("svc rcpt bind_conn_to_session1_1\n");
 
     /*
      * when we receive this call, we may convert the svc
-     * transport handle to a client, and call on the backchannel
+     * xprtort handle to a client, and call on the backchannel
      */
     r = pthread_create(&fchan_cb_tid, NULL, &fchan_callbackthread,
                        (void*) xprt);
@@ -345,10 +361,10 @@ read_1_svc_callback(read_args *args, struct svc_req *rq)
 
     /* convert xprt to a shared client channel */
     if (! duplex_clnt)
-        duplex_clnt = clnt_vc_create_from_svc(
+        duplex_clnt = clnt_vc_create_svc(
             xprt,
             BCHAN_PROG, BCHANV,
-            SVC_VC_CREATE_FLAG_DPLX |SVC_VC_CREATE_FLAG_DISPOSE);
+            SVC_VC_CREATE_DISPOSE);
 
     fprintf(stderr, "read_1_svc_callback before call\n");
 
@@ -356,7 +372,7 @@ read_1_svc_callback(read_args *args, struct svc_req *rq)
     callback1_1_arg->msg1 = strdup("read_1_svc_callback");
     callback1_1_arg->msg2 = strdup("sync");
 
-    cl_stat = clnt_call(duplex_clnt, CALLBACK1,
+    cl_stat = clnt_call(duplex_clnt, auth, CALLBACK1,
                         (xdrproc_t) xdr_bchan_msg, (caddr_t) callback1_1_arg,
                         (xdrproc_t) xdr_bchan_res, (caddr_t) callback1_1_res,
                         timeout);
@@ -368,7 +384,7 @@ read_1_svc_callback(read_args *args, struct svc_req *rq)
 }
 
 bool_t
-read_1_svc(read_args *args, read_res *res, struct svc_req *rqstp)
+read_1_svc(read_args *args, read_res *res, struct svc_req *req)
 {
     bool_t retval = TRUE;
 
@@ -388,14 +404,14 @@ read_1_svc(read_args *args, read_res *res, struct svc_req *rqstp)
     sprintf(res->data.data_val, "%d %d", args->off, args->len);
 
     if (args->flags & DUPLEX_UNIT_IMMED_CB) {
-        read_1_svc_callback(args, rqstp);
+        read_1_svc_callback(args, req);
     }
 
     return (retval);
 }
 
 bool_t
-write_1_svc(write_args *args, write_res *res, struct svc_req *rqstp)
+write_1_svc(write_args *args, write_res *res, struct svc_req *req)
 {
     bool_t retval = TRUE;
 
@@ -420,7 +436,7 @@ write_1_svc(write_args *args, write_res *res, struct svc_req *rqstp)
 /* !! Regenerate in fchan_svc.c */
 
 static void
-fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
+fchan_prog_1(struct svc_req *req, register SVCXPRT *xprt)
 {
 	union {
 		fchan_msg sendmsg1_1_arg;
@@ -441,9 +457,9 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
         memset(&argument, 0, sizeof(argument));
         memset(&result, 0, sizeof(result));
 
-	switch (rqstp->rq_proc) {
+	switch (req->rq_proc) {
 	case NULLPROC:
-		(void) svc_sendreply (transp, (xdrproc_t) xdr_void, (char *)NULL);
+            (void) svc_sendreply(xprt, req, (xdrproc_t) xdr_void, (char *)NULL);
 		return;
 
 	case SENDMSG1:
@@ -471,30 +487,30 @@ fchan_prog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 		break;
 
 	default:
-		svcerr_noproc (transp);
+            svcerr_noproc(xprt, req);
 		return;
 	}
 	memset ((char *)&argument, 0, sizeof (argument));
-	if (!svc_getargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
-		svcerr_decode (transp);
+	if (!svc_getargs (xprt, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
+            svcerr_decode(xprt, req);
 		return;
 	}
-	retval = (bool_t) (*local)((char *)&argument, (void *)&result, rqstp);
-	if (retval > 0 && !svc_sendreply(transp, (xdrproc_t) _xdr_result, (char *)&result)) {
-		svcerr_systemerr (transp);
+	retval = (bool_t) (*local)((char *)&argument, (void *)&result, req);
+	if (retval > 0 && !svc_sendreply(xprt, req, (xdrproc_t) _xdr_result, (char *)&result)) {
+            svcerr_systemerr(xprt, req);
 	}
-	if (!svc_freeargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
+	if (!svc_freeargs(xprt, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
 		fprintf (stderr, "%s", "unable to free arguments");
 		exit (1);
 	}
-	if (!fchan_prog_1_freeresult (transp, _xdr_result, (caddr_t) &result))
+	if (!fchan_prog_1_freeresult (xprt, _xdr_result, (caddr_t) &result))
 		fprintf (stderr, "%s", "unable to free results");
 
 	return;
 }
 
 int
-fchan_prog_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
+fchan_prog_1_freeresult (SVCXPRT *xprt, xdrproc_t xdr_result, caddr_t result)
 {
     xdr_free (xdr_result, result);
     
@@ -684,6 +700,9 @@ main (int argc, char **argv)
         printf ("usage: %s [-n -g] -p server_port\n", argv[0]);
         return (EXIT_FAILURE);
     }
+
+    /* auth is explicit */
+    auth = authnone_create();
 
     code = forechan_rpc_server(FCHAN_SVC_TCP);
     printf("forechannel_rpc_server result %d\n", code);

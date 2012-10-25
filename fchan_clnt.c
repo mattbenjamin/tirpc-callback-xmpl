@@ -9,38 +9,40 @@
 /* Default timeout can be changed using clnt_control() */
 static struct timeval TIMEOUT = { 25, 0 };
 
+extern AUTH *auth;
+
 enum clnt_stat 
 sendmsg1_1(fchan_msg *argp, fchan_res *clnt_res, CLIENT *clnt)
 {
-	return (clnt_call(clnt, SENDMSG1,
-		(xdrproc_t) xdr_fchan_msg, (caddr_t) argp,
-		(xdrproc_t) xdr_fchan_res, (caddr_t) clnt_res,
-		TIMEOUT));
+    return (clnt_call(clnt, auth, SENDMSG1,
+                      (xdrproc_t) xdr_fchan_msg, (caddr_t) argp,
+                      (xdrproc_t) xdr_fchan_res, (caddr_t) clnt_res,
+                      TIMEOUT));
 }
 
 enum clnt_stat 
 bind_conn_to_session1_1(void *argp, int *clnt_res, CLIENT *clnt)
 {
-	return (clnt_call(clnt, BIND_CONN_TO_SESSION1,
-		(xdrproc_t) xdr_void, (caddr_t) argp,
-		(xdrproc_t) xdr_int, (caddr_t) clnt_res,
-		TIMEOUT));
+    return (clnt_call(clnt, auth, BIND_CONN_TO_SESSION1,
+                      (xdrproc_t) xdr_void, (caddr_t) argp,
+                      (xdrproc_t) xdr_int, (caddr_t) clnt_res,
+                      TIMEOUT));
 }
 
 enum clnt_stat 
 read_1(read_args *argp, read_res *clnt_res, CLIENT *clnt)
 {
-	return (clnt_call(clnt, READ,
-		(xdrproc_t) xdr_read_args, (caddr_t) argp,
-		(xdrproc_t) xdr_read_res, (caddr_t) clnt_res,
-		TIMEOUT));
+    return (clnt_call(clnt, auth, READ,
+                      (xdrproc_t) xdr_read_args, (caddr_t) argp,
+                      (xdrproc_t) xdr_read_res, (caddr_t) clnt_res,
+                      TIMEOUT));
 }
 
 enum clnt_stat 
 write_1(write_args *argp, write_res *clnt_res, CLIENT *clnt)
 {
-	return (clnt_call(clnt, WRITE,
-		(xdrproc_t) xdr_write_args, (caddr_t) argp,
-		(xdrproc_t) xdr_write_res, (caddr_t) clnt_res,
-		TIMEOUT));
+    return (clnt_call(clnt, auth, WRITE,
+                      (xdrproc_t) xdr_write_args, (caddr_t) argp,
+                      (xdrproc_t) xdr_write_res, (caddr_t) clnt_res,
+                      TIMEOUT));
 }

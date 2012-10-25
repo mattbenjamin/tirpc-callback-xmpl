@@ -35,6 +35,8 @@
 #include "fchan.h"
 #include "bchan.h"
 #include <rpc/rpc.h>
+#include <rpc/svc_rqst.h>
+#include <rpc/rpc_dplx.h>
 
 #include "CUnit/Basic.h"
 
@@ -49,6 +51,7 @@ int server_port;
 CLIENT *cl_duplex_chan;
 SVCXPRT *duplex_xprt;
 pthread_t bchan_tid;
+AUTH *auth;
 
 static bool_t backchan_svc_started = FALSE;
 static pthread_mutex_t backchan_svc_mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -142,112 +145,130 @@ bchan_prog_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
 	return 1;
 }
 
-static inline void
-svc_set_rq_clntcred(struct svc_req *r, struct rpc_msg *msg)
+#define DISP_SLOCK(x) do { \
+    if (! slocked) { \
+        rpc_dplx_slx((x)); \
+        slocked = TRUE; \
+      }\
+    } while (0);
+
+#define DISP_SUNLOCK(x) do { \
+    if (slocked) { \
+        rpc_dplx_sux((x)); \
+        slocked = FALSE; \
+      }\
+    } while (0);
+
+#define DISP_RLOCK(x) do { \
+    if (! rlocked) { \
+        rpc_dplx_rlx((x)); \
+        rlocked = TRUE; \
+      }\
+    } while (0);
+
+#define DISP_RUNLOCK(x) do { \
+    if (rlocked) { \
+        rpc_dplx_rux((x)); \
+        rlocked = FALSE; \
+      }\
+    } while (0);
+
+static struct svc_req *
+alloc_rpc_request(SVCXPRT *xprt)
 {
-    r->rq_clntcred = msg->rm_call.cb_cred.oa_base + MAX_AUTH_BYTES;
+    struct svc_req *req = malloc(sizeof(struct svc_req));
+    req->rq_xprt = xprt;
+    return (req);
+}
+
+static void
+free_rpc_request(struct svc_req *req)
+{
+    free(req);
 }
 
 static bool_t
 duplex_unit_getreq(SVCXPRT *xprt)
 {
-  struct svc_req r;
-  struct rpc_msg *msg;
-  enum xprt_stat stat;
-  sigset_t mask;
-  bool_t destroyed;
-  int xp_fd = xprt->xp_fd;
+    struct svc_req *req;
+    bool destroyed = FALSE, recv_status;
+    bool rlocked = FALSE, slocked = FALSE;
+    enum xprt_stat stat;
 
-  msg = alloc_rpc_msg();
-  svc_set_rq_clntcred(&r, msg);
-  destroyed = FALSE;
+    req = alloc_rpc_request(xprt); /* ! NULL */
 
-  /* serialize xprt */
-  vc_fd_lock(xp_fd, &mask /*, "duplex_unit_getreq" */);
+    /* serialize recv channel */
+    DISP_RLOCK(xprt);
 
-  /* now receive msgs from xprt (support batch calls) */
-  do
-    {
-      if (SVC_RECV (xprt, msg))
-        {
+    /* now receive msgs from xprt (support batch calls) */
+    do {
+        if (SVC_RECV(xprt, req)) {
 
-         /* if msg->rm_direction=REPLY, another thread is waiting
-          * to handle it */
+            /* if msg->rm_direction=REPLY, another thread is waiting
+             * to handle it */
 
-            /* the goal is not force a control transfer in the common
-             * case.  the likelihood can be reduced by updating the
-             * epoll registration of xprt.xp_fd between around calls
-             * and also around svc callouts */
-
-            if (msg->rm_direction == REPLY)
+            /* can't happen, SVC_RECV returns false in REPLY case */
+            if (req->rq_msg->rm_direction == REPLY)
                 abort();
 
-	  /* now find the exported program and call it */
-          svc_vers_range_t vrange;
-          svc_lookup_result_t lkp_res;
-          svc_rec_t *svc_rec;
-	  enum auth_stat why;
+            /* now find the exported program and call it */
+            svc_vers_range_t vrange;
+            svc_lookup_result_t lkp_res;
+            svc_rec_t *svc_rec;
+            enum auth_stat why;
 
-	  r.rq_xprt = xprt;
-	  r.rq_prog = msg->rm_call.cb_prog;
-	  r.rq_vers = msg->rm_call.cb_vers;
-	  r.rq_proc = msg->rm_call.cb_proc;
-	  r.rq_cred = msg->rm_call.cb_cred;
+            /* first authenticate the message */
+            if ((why = _authenticate(req, req->rq_msg)) != AUTH_OK) {
+                svcerr_auth(xprt, req, why);
+                goto call_done;
+            }
 
-	  /* first authenticate the message */
-	  if ((why = _authenticate (&r, msg)) != AUTH_OK)
-	    {
-	      svcerr_auth (xprt, why);
-	      goto call_done;
-	    }
-
-          lkp_res = svc_lookup(&svc_rec, &vrange, r.rq_prog, r.rq_vers,
-                               NULL, 0);
-          switch (lkp_res) {
-          case SVC_LKP_SUCCESS:
-              (*svc_rec->sc_dispatch) (&r, xprt);
-              goto call_done;
-              break;
-          SVC_LKP_VERS_NOTFOUND:
-              svcerr_progvers (xprt, vrange.lowvers, vrange.highvers);
-          default:
-              svcerr_noprog (xprt);
-              break;
-          }
-        } /* SVC_RECV again? probably want to try a non-blocking
-           * recv or MSG_PEEK */
-
-      /*
-       * Check if the xprt has been disconnected in a
-       * recursive call in the service dispatch routine.
-       * If so, then break.
-       */
-      if (!svc_validate_xprt_list(xprt))
-          break;
+            lkp_res = svc_lookup(&svc_rec, &vrange, req->rq_prog, req->rq_vers,
+                                 NULL, 0);
+            switch (lkp_res) {
+            case SVC_LKP_SUCCESS:
+                (*svc_rec->sc_dispatch) (req, xprt);
+                goto call_done;
+                break;
+            SVC_LKP_VERS_NOTFOUND:
+                svcerr_progvers(xprt, req, vrange.lowvers, vrange.highvers);
+            default:
+                svcerr_noprog(xprt, req);
+                break;
+            }
+        } /* SVC_RECV again */
 
     call_done:
-      /* XXX locking and destructive ops on xprt need to be reviewed */
-      if ((stat = SVC_STAT (xprt)) == XPRT_DIED)
-	{
-            vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
-#if 0 /* the case is interesting, but we don't need to double free xprt */
-            SVC_DESTROY (xprt);
-#endif
+        /* XXX locking and destructive ops on xprt need to be reviewed */
+        if ((stat = SVC_STAT(xprt)) == XPRT_DIED) {
+            /* XXX the xp_destroy methods call the new svc_rqst_xprt_unregister
+             * routine, so there shouldn't be internal references to xprt.  The
+             * API client could also override this routine.  Still, there may
+             * be a motivation for adding a lifecycle callback, since the API
+             * client can get a new-xprt callback, and could have kept the
+             * address (and should now be notified we are disposing it). */
+            __warnx(TIRPC_DEBUG_FLAG_SVC,
+                    "%s: stat == XPRT_DIED (%p) \n", __func__, xprt);
+            DISP_RUNLOCK(xprt);
+            SVC_DESTROY(xprt);
             destroyed = TRUE;
             break;
-	}
-    else if ((xprt->xp_auth != NULL) &&
-	     (xprt->xp_auth->svc_ah_private == NULL))
-	{
-            xprt->xp_auth = NULL;
-	}
-    }
-  while (stat == XPRT_MOREREQS);
+        } else {
+            /*
+             * Check if the xprt has been disconnected in a
+             * recursive call in the service dispatch routine.
+             * If so, then break.
+             */
+            if (!svc_validate_xprt_list(xprt))
+                break;
+        }
 
-  free_rpc_msg(msg);
+    } while (stat == XPRT_MOREREQS);
 
-  if (! destroyed)
-      vc_fd_unlock(xp_fd, &mask /*, "duplex_unit_getreq" */);
+    free_rpc_request(req);
+
+    if (! destroyed)
+        DISP_RUNLOCK(xprt);
 }
 
 static void*
@@ -270,10 +291,8 @@ backchannel_rpc_server(void *arg)
 
     /* get a transport handle from our connected client
      * handle, cl is disposed for us */
-    duplex_xprt = svc_vc_create_from_clnt(
-        cl,
-        0 /* sendsz */, 0 /* recvsz */,
-        SVC_VC_CREATE_FLAG_DPLX);
+    duplex_xprt = svc_vc_create_clnt(cl, 0 /* sendsz */, 0 /* recvsz */,
+        SVC_VC_CREATE_NONE);
 
     if (!duplex_xprt) {
 	fprintf(stderr, "%s\n", "Create SVCXPRT from CLIENT failed");
@@ -381,6 +400,9 @@ duplex_rpc_unit_PkgInit(int argc, char *argv[])
         return (1);
     }
 
+    /* auth is explicit */
+    auth = authnone_create();
+
     /* start backchannel service using cl */
     r =  pthread_create(&bchan_tid, NULL, &backchannel_rpc_server,
                         (void*) cl_duplex_chan);
@@ -453,7 +475,7 @@ void read_1m_1(void)
 
         args->off = ix * args->len;
 
-        cl_stat = clnt_call(cl_duplex_chan, READ,
+        cl_stat = clnt_call(cl_duplex_chan, auth, READ,
                             (xdrproc_t) xdr_read_args, (caddr_t) args,
                             (xdrproc_t) xdr_read_res, (caddr_t) res,
                             timeout);
@@ -501,7 +523,7 @@ void write_1m_1(void)
 
     for (ix = 0; ix < 32; ++ix) {
 
-        cl_stat = clnt_call(cl_duplex_chan, WRITE,
+        cl_stat = clnt_call(cl_duplex_chan, auth, WRITE,
                             (xdrproc_t) xdr_write_args, (caddr_t) args,
                             (xdrproc_t) xdr_int, (caddr_t) &res,
                             timeout);
@@ -554,7 +576,7 @@ void read_3b_overlap_b2(void)
             args->flags = DUPLEX_UNIT_IMMED_CB;
         }
 
-        cl_stat = clnt_call(cl_duplex_chan, READ,
+        cl_stat = clnt_call(cl_duplex_chan, auth, READ,
                             (xdrproc_t) xdr_read_args, (caddr_t) args,
                             (xdrproc_t) xdr_read_res, (caddr_t) res,
                             timeout);

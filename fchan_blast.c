@@ -72,6 +72,7 @@ static char *server_host = NULL;
 static struct timeval timeout, default_timeout = { 120, 0 };
 pthread_mutex_t ctr_mtx = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t n_processed = 0;
+AUTH *auth;
 
 static uint32_t bchan_id;
 static pthread_t* fchan_tid;
@@ -211,6 +212,9 @@ main (int argc, char *argv[])
     }
 
     fchan_signals();
+
+    /* auth is explicit */
+    auth = authnone_create();
 
     fchan_tid = (pthread_t *) malloc(n_threads * sizeof(pthread_t));
     for (ix = 0; ix < n_threads; ++ix) {

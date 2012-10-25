@@ -75,6 +75,7 @@ extern void bchan_prog_1(struct svc_req *, register SVCXPRT *);
 static uint32_t bchan_id;
 static pthread_t fchan_tid;
 static int forechan_shutdown = FALSE;
+AUTH *auth;
 
 void fchan_sighand(int sig)
 {
@@ -117,8 +118,9 @@ backchan_rpc_server(CLIENT *cl)
 
     /* get a transport handle from our connected client
      * handle, cl is disposed for us */
-    xprt = svc_vc_create_from_clnt(
-        cl, 0 /* sendsz */, 0 /* recvsz */, SVC_VC_CREATE_FLAG_DPLX);
+    xprt = svc_vc_create_clnt(
+        cl, 0 /* sendsz */, 0 /* recvsz */,
+        SVC_FLAG_NOREG_XPRTS /* dont call xprt_register */);
 
     if (!xprt) {
 	fprintf(stderr, "%s\n", "Create SVCXPRT from CLIENT failed");
@@ -133,8 +135,7 @@ backchan_rpc_server(CLIENT *cl)
     /* Use SVC_VC_CREATE_FLAG_XPRT_NOREG, so xprt has no event channel */
     code = svc_rqst_new_evchan(&bchan_id,
                                NULL /* u_data */,
-                               (SVC_VC_CREATE_FLAG_XPRT_NOREG |
-                                SVC_RQST_FLAG_CHAN_AFFINITY));
+                               SVC_RQST_FLAG_CHAN_AFFINITY);
 
     /* and bind xprt to it (it seems like the affinity flag belongs here,
      * rather than above) */
@@ -220,6 +221,9 @@ main (int argc, char *argv[])
         clnt_pcreateerror (host);
         exit (1);
     }
+
+    /* as of duplex-9, auth is explicit */
+    auth = authnone_create();
 
     /* call BIND_CONN_TO_SESSION equivalent RPC */
     retval_1 = bind_conn_to_session1_1(NULL, &r, cl_backchan);
